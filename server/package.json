@@ -1,0 +1,36 @@
+{
+  "name": "linminhao-chat-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@alicloud/dm20151123": "^1.10.2",
+    "@alicloud/dysmsapi20170525": "^4.6.0",
+    "@alicloud/openapi-client": "^0.4.15",
+    "better-sqlite3": "^13.0.3",
+    "express": "^4.21.2",
+    "jose": "^6.2.9",
+    "nodemailer": "^6.10.1",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.3": true,
+    "@alicloud/openapi-core@1.0.8": true
+  }
+}
