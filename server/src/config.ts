@@ -43,14 +43,22 @@ export interface AppConfig {
 
 function loadEnvFile(): Record<string, string> {
   // 支持 config/env.json(服务器本机,chmod 600)或真实环境变量。env 变量优先。
-  const envPath = path.join(process.cwd(), 'config', 'env.json');
+  // 候选位置:① cwd/config/env.json(随 start 脚本 WorkingDirectory)② DATA_ROOT/config/env.json(运维约定位置)
+  const candidates = [
+    path.join(process.cwd(), 'config', 'env.json'),
+    path.join(process.env.DATA_ROOT || defaultDataRoot(), 'config', 'env.json'),
+  ];
   let file: Record<string, string> = {};
-  try {
-    if (fs.existsSync(envPath)) {
-      file = JSON.parse(fs.readFileSync(envPath, 'utf8'));
+  for (const envPath of candidates) {
+    try {
+      if (fs.existsSync(envPath)) {
+        // 兼容 PowerShell 写出的 UTF-8 BOM 文件(JSON.parse 遇 BOM 直接失败)
+        file = JSON.parse(fs.readFileSync(envPath, 'utf8').replace(/^\uFEFF/, ''));
+        break;
+      }
+    } catch (e) {
+      console.error('[config] failed to read', envPath, ':', (e as Error).message);
     }
-  } catch (e) {
-    console.error('[config] failed to read config/env.json:', (e as Error).message);
   }
   return file;
 }
