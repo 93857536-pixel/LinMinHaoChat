@@ -1,0 +1,8 @@
+# 生成物:工程/构建/Info.plist 均由 project.yml + xcodegen 产生,不提交
+*.xcodeproj
+build/
+DerivedData/
+Info.plist
+xcuserdata/
+*.xcuserstate
+.DS_Store
