@@ -12,7 +12,7 @@ export type WsMsg =
 export interface WsClientOptions {
   onMessage: (m: WsMsg) => void;
   onOpen?: () => void;
-  onClose?: () => void;
+  onClose?: (e?: CloseEvent) => void;
   onError?: (e: unknown) => void;
 }
 
@@ -32,7 +32,7 @@ export function connectWs(token: string, opts: WsClientOptions): WsHandle {
       opts.onMessage(JSON.parse(String(e.data)) as WsMsg);
     } catch { /* ignore bad frames */ }
   };
-  ws.onclose = () => { if (!closed) opts.onClose?.(); };
+  ws.onclose = (e) => { if (!closed) opts.onClose?.(e); };
   ws.onerror = (e) => opts.onError?.(e);
 
   // 心跳保活

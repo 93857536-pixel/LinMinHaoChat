@@ -50,6 +50,9 @@ export default function Chat() {
   const closeWsRef = useRef<(() => void) | null>(null);
   const reconnectTimer = useRef<number | null>(null);
   const closedRef = useRef(false);
+  /** WS 当前是否在线(断线期间靠轮询兜底补收) */
+  const wsConnectedRef = useRef(false);
+  const pollTimerRef = useRef<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const refreshRooms = useCallback(async () => {
@@ -63,6 +66,7 @@ export default function Chat() {
     refreshRooms();
     return () => {
       closedRef.current = true;
+      if (pollTimerRef.current !== null) window.clearInterval(pollTimerRef.current);
       if (reconnectTimer.current !== null) window.clearTimeout(reconnectTimer.current);
       closeWsRef.current?.();
     };
@@ -129,6 +133,7 @@ export default function Chat() {
           }
         },
         onClose: () => {
+          wsConnectedRef.current = false;
           if (closedRef.current) return;
           const delay = Math.min(1000 * 2 ** retries, 15000);
           retries += 1;
@@ -138,9 +143,16 @@ export default function Chat() {
       closeWsRef.current?.();
       closeWsRef.current = handle.close;
       handle.send({ type: 'subscribe', roomId: room.id });
+      wsConnectedRef.current = true;
       pullNew(room.id, key as Bytes); // 补收断线期间的消息
     };
     connect();
+
+    // 断线兜底:WS 断开期间定时轮询补收,避免断线期间的消息丢失
+    if (pollTimerRef.current !== null) window.clearInterval(pollTimerRef.current);
+    pollTimerRef.current = window.setInterval(() => {
+      if (!wsConnectedRef.current) pullNew(room.id, key as Bytes);
+    }, 15_000);
   }, [token]);
 
   const pullNew = useCallback(async (roomId: string, key: Bytes) => {

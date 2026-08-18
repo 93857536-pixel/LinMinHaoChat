@@ -118,9 +118,13 @@ export async function wipeIdentity(): Promise<void> {
   await idbDelete('identity');
 }
 
-/** 导入他人的 ECDH 公钥(raw base64) */
+/** 导入他人的 ECDH 公钥(raw base64;线格式 64B x||y) */
 export async function importPeerEcdhPub(b64: string): Promise<CryptoKey> {
-  return subtle.importKey('raw', base64ToBytes(b64), { name: 'ECDH', namedCurve: 'P-256' }, true, []);
+  const raw = base64ToBytes(b64);
+  // ⚠️ WebCrypto importKey('raw') 对 P-256 要求 65B 未压缩点格式(0x04||x||y);
+  // 我们的线格式是 64B(JWK x/y 拼接),必须补 0x04 前缀,否则 importKey 报 DataError
+  const point = raw.length === 64 ? new Uint8Array([0x04, ...raw]) : raw;
+  return subtle.importKey('raw', point, { name: 'ECDH', namedCurve: 'P-256' }, true, []);
 }
 
 /* ---------------- 口令加密导出包(多设备迁移) ---------------- */

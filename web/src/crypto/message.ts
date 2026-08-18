@@ -63,7 +63,7 @@ export async function decryptMessage(
   return new TextDecoder().decode(plain);
 }
 
-/** 附件加密(同 AES-GCM,无 seq 绑定) */
+/** 附件加密(同 AES-GCM,无 seq 绑定;返回自描述格式 iv||ct||tag,与 iOS CryptoKit 协议一致) */
 export async function encryptAttachment(sessionKey: Bytes, data: ArrayBuffer, roomId: string, ts: number): Promise<ArrayBuffer> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const base = await subtle.importKey('raw', sessionKey, 'HKDF', false, ['deriveKey']);
@@ -74,7 +74,12 @@ export async function encryptAttachment(sessionKey: Bytes, data: ArrayBuffer, ro
     false,
     ['encrypt']
   );
-  return subtle.encrypt({ name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(`${roomId}:${ts}`) }, key, data);
+  const ct = await subtle.encrypt({ name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(`${roomId}:${ts}`) }, key, data);
+  // 拼接 iv(12B) 到密文前:decryptAttachment 按 iv(12)||body 切片解密
+  const out = new Uint8Array(12 + ct.byteLength);
+  out.set(iv, 0);
+  out.set(new Uint8Array(ct), 12);
+  return out.buffer;
 }
 
 export async function decryptAttachment(sessionKey: Bytes, data: ArrayBuffer, roomId: string, ts: number): Promise<ArrayBuffer> {

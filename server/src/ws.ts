@@ -11,7 +11,7 @@ import { jwtVerify } from 'jose';
 /**
  * WebSocket 网关 /ws:
  * - 账号连接:?token=<user JWT>(HS256 校验)
- * - 临时连接:?wsToken=<join 颁发的短期令牌>(sessions 表,temp: 前缀)
+ * - 临时连接:?wsToken=<join 颁发的短期令牌>(sessions 表,temp: 前缀;有效期内可重连复用)
  * - 认证后加入房间订阅;消息转发只做中继,永不解密
  * - 消息大小限制(config.wsMaxPayloadBytes);心跳保活;在线状态
  */
@@ -55,10 +55,10 @@ export function startWs(server: Server) {
       | { user_id: number; device: string } | undefined;
     if (row && String(row.device).startsWith('temp:')) {
       // 临时聊天短令牌(由 POST /api/temp/rooms/:id/join 颁发)
+      // 令牌在有效期内(5 分钟)可重复连接:断线重连复用同一令牌,避免每次重连重新
+      // join 触发限流(重连风暴 → 429 锁死)。失效后连接被拒(4001),客户端再重新 join。
       const [, roomId, anonId] = String(row.device).split(':');
       conn = { ws, kind: 'temp', roomId, anonId, ip, lastSeen: Date.now() };
-      // 短令牌一次性使用
-      db.prepare('DELETE FROM sessions WHERE id=?').run(token);
     } else if (token) {
       // 账号 JWT
       try {

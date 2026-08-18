@@ -65,6 +65,10 @@ export default function InviteChat() {
   const closeWsRef = useRef<WsHandle | null>(null);
   const reconnectTimer = useRef<number | null>(null);
   const cancelledRef = useRef(false);
+  /** 当前短令牌(join 颁发,5 分钟有效期内可重复连接;失效后重新 join) */
+  const wsTokenRef = useRef<string | null>(null);
+  /** WS 当前是否在线(断线期间靠轮询兜底补收) */
+  const wsConnectedRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   /** 从 fragment 取密钥;若 localStorage 已有则复用(持久化,保留记录) */
@@ -146,20 +150,9 @@ export default function InviteChat() {
       setMessages(decrypted);
       lastSeqRef.current = decrypted.length ? decrypted[decrypted.length - 1].seq : 0;
 
-      // WS 实时通知(断线自动重连)
-      closeWsRef.current = connectWs(resp.wsToken, {
-        onMessage: (m: WsMsg) => {
-          if (m.type === 'presence') {
-            setOnline(Array.isArray(m.online) ? m.online : []);
-            if (typeof m.onlineIps === 'number') setOnlineIps(m.onlineIps);
-          }
-          if (m.type === 'msg' && m.seq > lastSeqRef.current) pullNew();
-        },
-        onClose: () => {
-          if (cancelledRef.current) return;
-          reconnectTimer.current = window.setTimeout(() => reconnectWs(1), 1000);
-        },
-      });
+      // WS 实时通知(断线自动重连;令牌存入 ref,重连时复用避免重复 join 触发限流)
+      wsTokenRef.current = resp.wsToken;
+      void reconnectWs(0);
 
       setPhase('chat');
     } catch (e) {
@@ -198,43 +191,66 @@ export default function InviteChat() {
     } catch { /* ignore */ }
   }, []);
 
-  /** 断线自动重连:重新 join 拿新令牌(邀请房间需验证码,复用已输入的),重连后补收离线消息 */
+  /** 断线自动重连:优先复用已颁发的短令牌(5 分钟有效期内可重复连接,不再每次重连都 join,
+   *  避免重连风暴烧光 join 限流导致 429 锁死);令牌失效(4001)才重新 join
+   *  (邀请房间复用已输入的验证码),重连后补收离线消息 */
   const reconnectWs = useCallback(async (attempt: number) => {
     if (cancelledRef.current) return;
     const roomId = roomIdRef.current;
     const key = keyRef.current;
     if (!roomId || !key) return;
-    try {
-      const resp = await inviteApi.join(inviteId, { code, token: session?.token ?? null, anonId: anonRef.current || null });
-      anonRef.current = resp.anonId;
-      localStorage.setItem('anon:' + roomId, resp.anonId);
-      const handle = connectWs(resp.wsToken, {
-        onMessage: (m: WsMsg) => {
-          if (m.type === 'presence') {
-            setOnline(Array.isArray(m.online) ? m.online : []);
-            if (typeof m.onlineIps === 'number') setOnlineIps(m.onlineIps);
-          }
-          if (m.type === 'msg' && m.seq > lastSeqRef.current) pullNew();
-        },
-        onClose: () => {
-          if (cancelledRef.current) return;
-          const delay = Math.min(1000 * 2 ** attempt, 15000);
-          reconnectTimer.current = window.setTimeout(() => reconnectWs(attempt + 1), delay);
-        },
-      });
-      closeWsRef.current?.close();
-      closeWsRef.current = handle;
-      pullNew(); // 补收断线期间的消息
-    } catch {
-      if (cancelledRef.current) return;
-      const delay = Math.min(1000 * 2 ** attempt, 15000);
-      reconnectTimer.current = window.setTimeout(() => reconnectWs(attempt + 1), delay);
+    let token = wsTokenRef.current;
+    if (!token) {
+      try {
+        const resp = await inviteApi.join(inviteId, { code, token: session?.token ?? null, anonId: anonRef.current || null });
+        anonRef.current = resp.anonId;
+        localStorage.setItem('anon:' + roomId, resp.anonId);
+        wsTokenRef.current = resp.wsToken;
+        token = resp.wsToken;
+      } catch {
+        if (cancelledRef.current) return;
+        const delay = Math.min(1000 * 2 ** attempt, 15000);
+        reconnectTimer.current = window.setTimeout(() => reconnectWs(attempt + 1), delay);
+        return;
+      }
     }
+    const handle = connectWs(token, {
+      onMessage: (m: WsMsg) => {
+        if (m.type === 'presence') {
+          setOnline(Array.isArray(m.online) ? m.online : []);
+          if (typeof m.onlineIps === 'number') setOnlineIps(m.onlineIps);
+        }
+        if (m.type === 'msg' && m.seq > lastSeqRef.current) pullNew();
+      },
+      onOpen: () => {
+        wsConnectedRef.current = true;
+        pullNew(); // 补收断线期间的消息
+      },
+      onClose: (e) => {
+        wsConnectedRef.current = false;
+        if (cancelledRef.current) return;
+        // 4001 = 令牌失效/过期 → 丢弃令牌,下次重连重新 join
+        if (e?.code === 4001) wsTokenRef.current = null;
+        const delay = Math.min(1000 * 2 ** attempt, 15000);
+        reconnectTimer.current = window.setTimeout(() => reconnectWs(attempt + 1), delay);
+      },
+    });
+    closeWsRef.current?.close();
+    closeWsRef.current = handle;
   }, [inviteId, code, session?.token, pullNew]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages]);
+
+  // 断线兜底:WS 断开期间定时轮询补收,避免断线期间的消息丢失
+  useEffect(() => {
+    if (phase !== 'chat') return;
+    const pollTimer = window.setInterval(() => {
+      if (!wsConnectedRef.current && !cancelledRef.current) pullNew();
+    }, 15_000);
+    return () => window.clearInterval(pollTimer);
+  }, [phase, pullNew]);
 
   const send = async () => {
     const text = input.trim();
