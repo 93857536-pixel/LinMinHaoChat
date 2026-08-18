@@ -1,8 +1,8 @@
 # LinMinHao Chat
 
-**端到端加密(E2EE)临时通讯 + 永久账号通讯 Web 应用**
+**端到端加密(E2EE)临时通讯 + 永久账号通讯应用(原生 iOS App 主客户端 + Web 测试客户端)**
 
-生产地址:https://<你的域名>(自部署;详见 DEPLOYMENT.md)
+> 📌 产品定位:https://linminhao.top 为后端基础设施,Web 前端为测试/兼容客户端,正式用户客户端是原生 iOS App。详见 [PRODUCT_DIRECTION.md](PRODUCT_DIRECTION.md)
 
 ## 功能
 
@@ -59,6 +59,8 @@ cd web && npm install && npm run dev
 ```
 
 ## 相关文档
+
+- [PRODUCT_DIRECTION.md](PRODUCT_DIRECTION.md) — **产品定位总纲(iOS App 主客户端)**
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — 架构与 E2EE 密钥生命周期
 - [SECURITY.md](SECURITY.md) — 安全设计
