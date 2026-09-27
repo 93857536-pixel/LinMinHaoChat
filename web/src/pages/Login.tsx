@@ -18,7 +18,8 @@ export default function Login() {
   const [countdown, setCountdown] = useState(0);
   const [err, setErr] = useState('');
   const [sending, setSending] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [submitIntent, setSubmitIntent] = useState<null | 'login' | 'register'>(null);
+  const submitting = submitIntent !== null;
 
   const sendCode = async () => {
     setErr('');
@@ -40,30 +41,39 @@ export default function Login() {
     setSending(false);
   };
 
-  const submit = async () => {
+  const submit = (intent: 'login' | 'register') => {
     setErr('');
     if (!/^\d{6}$/.test(code)) { setErr('请输入 6 位验证码'); return; }
-    setSubmitting(true);
-    try {
-      // 确保本设备身份密钥存在,并随注册上传公钥
-      const identity = await ensureIdentityKeys();
-      const resp = mode === 'email'
-        ? await authApi.register({ type: 'email', target: target.trim().toLowerCase(), code, handle: handle.trim() || undefined, deviceId: identity.deviceId, ed25519Pub: identity.ed25519Pub, ecdhPub: identity.ecdhPub })
-        : await authApi.register({ type: 'sms', target: target.trim(), code, handle: handle.trim() || undefined, deviceId: identity.deviceId, ed25519Pub: identity.ed25519Pub, ecdhPub: identity.ecdhPub });
-      login({ token: resp.token, sessionId: resp.sessionId, userId: resp.user.id, handle: resp.user.handle, deviceId: identity.deviceId });
-      await refreshIdentity();
-      nav(next);
-    } catch (e) {
-      const msg = (e as Error).message;
-      setErr(msg === 'invalid_code' ? '验证码错误' : msg === 'too_many_attempts' ? '尝试次数过多,请重新获取' : '登录失败,请稍后重试');
-    }
-    setSubmitting(false);
+    setSubmitIntent(intent);
+    (async () => {
+      try {
+        // 确保本设备身份密钥存在,并随注册/登录上传公钥
+        const identity = await ensureIdentityKeys();
+        const base = { type: mode, target: mode === 'email' ? target.trim().toLowerCase() : target.trim(), code,
+                       deviceId: identity.deviceId, ed25519Pub: identity.ed25519Pub, ecdhPub: identity.ecdhPub };
+        const resp = intent === 'register'
+          ? await authApi.register({ ...base, handle: handle.trim() || undefined })
+          : await authApi.login(base);
+        login({ token: resp.token, sessionId: resp.sessionId, userId: resp.user.id, handle: resp.user.handle, deviceId: identity.deviceId });
+        await refreshIdentity();
+        nav(next);
+      } catch (e) {
+        const msg = (e as Error).message;
+        if (intent === 'login' && msg === 'invalid_code') {
+          setErr('登录失败:账号不存在或验证码错误(新账号请点「注册」)');
+        } else {
+          setErr(msg === 'invalid_code' ? '验证码错误' : msg === 'too_many_attempts' ? '尝试次数过多,请重新获取' : intent === 'register' ? '注册失败,请稍后重试' : '登录失败,请稍后重试');
+        }
+      } finally {
+        setSubmitIntent(null);
+      }
+    })();
   };
 
   return (
     <div className="card" style={{ maxWidth: 420, margin: '40px auto' }}>
       <h2 style={{ fontSize: 20, marginBottom: 6 }}>登录 / 注册</h2>
-      <p className="hint" style={{ marginBottom: 16 }}>验证码登录,无需记忆密码。首次登录自动创建账号。</p>
+      <p className="hint" style={{ marginBottom: 16 }}>验证码验证,无需记忆密码。已有账号点「登录」,首次使用点「注册」。</p>
 
       <div className="tabs">
         <button className={`tab ${mode === 'sms' ? 'active' : ''}`} onClick={() => { setMode('sms'); setErr(''); }}>手机号</button>
@@ -113,9 +123,24 @@ export default function Login() {
 
       {err && <div className="error">{err}</div>}
 
-      <button className="btn btn-primary" style={{ width: '100%', marginTop: 10 }} onClick={submit} disabled={submitting}>
-        {submitting ? '登录中…' : '登录 / 注册'}
-      </button>
+      <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+        <button
+          className="btn btn-primary"
+          style={{ flex: 1 }}
+          onClick={() => submit('login')}
+          disabled={submitting}
+        >
+          {submitIntent === 'login' ? '登录中…' : '登录'}
+        </button>
+        <button
+          className="btn btn-ghost"
+          style={{ flex: 1 }}
+          onClick={() => submit('register')}
+          disabled={submitting}
+        >
+          {submitIntent === 'register' ? '注册中…' : '注册'}
+        </button>
+      </div>
 
       <p className="hint" style={{ marginTop: 14, textAlign: 'center' }}>
         <Link to="/">← 返回首页</Link>
