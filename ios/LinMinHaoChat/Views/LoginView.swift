@@ -59,6 +59,9 @@ struct LoginView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("登录 / 注册")
         .navigationBarTitleDisplayMode(.inline)
+        // 进登录页/切账号类型时后台预取号(accelerateLoginPage),授权页秒弹;
+        // 真机+蜂窝环境才有意义,模拟器自动跳过(oneTapUnavailable)
+        .task(id: isEmail) { await prepareOneTap() }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             if countdown > 0 { countdown -= 1 }
         }
@@ -348,5 +351,13 @@ struct LoginView: View {
                 }
             }
         }
+    }
+
+    /// 进登录页/手机号模式时后台预取号(官方选调 accelerateLoginPage),
+    /// 让后续点「本机号码一键登录」时授权页立即弹出,避免现场取号 3s+ 等待被感知为"没反应"
+    private func prepareOneTap() async {
+        guard !isEmail, !oneTapUnavailable else { return }
+        await PNSAuthManager.shared.setupIfNeeded()
+        _ = await PNSAuthManager.shared.accelerateLoginPage()
     }
 }
