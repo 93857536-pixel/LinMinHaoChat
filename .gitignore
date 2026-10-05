@@ -7,3 +7,4 @@ config/
 .DS_Store
 *.local
 *.tsbuildinfo
+ios/*.ipa

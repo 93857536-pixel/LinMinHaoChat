@@ -24,6 +24,14 @@ enum PNSLoginResult {
     case failed(reason: String)
 }
 
+/// 网络错误类型
+enum PNSNetworkError: String {
+    case connectionLost = "the network connection was lost"
+    case noCellularNetwork
+    case timeout
+    case unknown
+}
+
 final class PNSAuthManager {
 
     static let shared = PNSAuthManager()
@@ -38,8 +46,36 @@ final class PNSAuthManager {
     /// 统一日志(os.Logger,log stream 可捕获;devicectl --console 抓不到 print)
     private let pnsLogger = Logger(subsystem: "com.linminhao.chat", category: "PNS")
 
+    /// 日志存储(用于上传功能)
+    private var logBuffer: [String] = []
+    static let maxLogBufferSize = 500
+
     private func pnsLog(_ msg: String) {
         pnsLogger.info("\(msg, privacy: .public)")
+        // 同时存入内存缓冲区用于上传
+        logBuffer.append("[\(Date().ISO8601Format())] \(msg)")
+        if logBuffer.count > PNSAuthManager.maxLogBufferSize {
+            logBuffer.removeFirst(logBuffer.count - PNSAuthManager.maxLogBufferSize)
+        }
+    }
+
+    /// 获取日志内容供上传使用
+    func getLogContent() -> String {
+        let header = """
+        === LinMinHao Chat 一键登录日志 ===
+        SDK版本: \(TXCommonHandler.sharedInstance().getVersion())
+        获取时间: \(Date().ISO8601Format())
+        ===================================
+
+        """
+        return header + logBuffer.joined(separator: "\n")
+    }
+
+    /// 检测是否为网络连接丢失错误
+    static func isNetworkConnectionLost(code: String) -> Bool {
+        // SDK内部网络错误可能返回多种格式
+        let networkErrorCodes = ["600010", "600011", "600015", "600025"]
+        return networkErrorCodes.contains(code)
     }
 
     private init() {}
@@ -52,6 +88,11 @@ final class PNSAuthManager {
             return
         }
         pnsLog("[PNS] setupIfNeeded: 首次初始化,调 setAuthSDKInfo")
+        // v2.14.18+ 降频控制:开启后 SDK 跳过配置/埋点等 dypns 域名访问,不影响登录核心功能。
+        // 弱网/运营商网关环境下,这些后台请求失败是 "the network connection was lost"
+        // 类报错的主要来源;开启降频可显著减少非必要网络请求。
+        PNSFeatureManager.enableReduceNetworkAccess(true)
+        pnsLog("[PNS] 已开启 enableReduceNetworkAccess(降频模式)")
         var finished = false
         let finishOnce: (Bool) -> Void = { ok in
             guard !finished else { return }
@@ -91,6 +132,9 @@ final class PNSAuthManager {
             self?.pnsLog("[PNS] checkEnvAvailable 回调 resultCode=\(code) dict=\(String(describing: result ?? [:]))")
             if code == PNSCodeSuccess {
                 finishOnce(true, nil)
+            } else if Self.isNetworkConnectionLost(code: code) {
+                // 网络链接丢失特殊处理
+                finishOnce(false, "网络连接已中断,请检查网络设置后重试")
             } else {
                 finishOnce(false, Self.describe(code: code))
             }
@@ -190,6 +234,13 @@ final class PNSAuthManager {
                     completeOnce(.notSupported(reason: "未检测到 SIM 卡,请使用验证码登录"))
                 case PNSCodeNoCellularNetwork:
                     completeOnce(.notSupported(reason: "蜂窝网络未开启,请切换到移动数据后重试"))
+                case PNSCodeUnknownOperator, PNSCodeGetTokenFailed, PNSCodeInterfaceTimeout, PNSCodeEnvCheckFail:
+                    // 这些错误码可能表示网络连接问题
+                    if Self.isNetworkConnectionLost(code: code) {
+                        completeOnce(.failed(reason: "网络连接已中断,请检查网络设置后重试"))
+                    } else {
+                        completeOnce(.failed(reason: Self.describe(code: code)))
+                    }
                 case PNSCodeLoginControllerPresentSuccess:
                     // 600001 授权页唤起成功(中间事件,等待后续 token 回调,不 resume)
                     // ⚠️ 默认 checkbox 未勾选,点「同意」不会获取 token;这里默认勾选协议
@@ -210,8 +261,14 @@ final class PNSAuthManager {
                         self?.pnsLog("[PNS] 中间事件 resultCode=\(code) 忽略(等终态)")
                         break
                     }
-                    self?.pnsLog("[PNS] 失败 resultCode=\(code)")
-                    completeOnce(.failed(reason: Self.describe(code: code)))
+                    // 检查是否为网络连接相关错误
+                    if Self.isNetworkConnectionLost(code: code) {
+                        self?.pnsLog("[PNS] 检测到网络连接错误 code=\(code)")
+                        completeOnce(.failed(reason: "网络连接已中断,请检查网络设置后重试"))
+                    } else {
+                        self?.pnsLog("[PNS] 失败 resultCode=\(code)")
+                        completeOnce(.failed(reason: Self.describe(code: code)))
+                    }
                 }
             }
         }
@@ -223,9 +280,9 @@ final class PNSAuthManager {
         case PNSCodeNoSIMCard: return "未检测到 SIM 卡"
         case PNSCodeNoCellularNetwork: return "蜂窝网络未开启或不稳定,请开启移动数据"
         case PNSCodeUnknownOperator: return "无法识别运营商"
-        case PNSCodeGetTokenFailed: return "获取令牌失败(600011,含运营商错误,重试或换验证码登录)"
+        case PNSCodeGetTokenFailed: return "获取令牌失败,网络连接可能已中断,请检查网络后重试"
         case PNSCodeGetMaskPhoneFailed: return "预取号失败,请重试"
-        case PNSCodeInterfaceTimeout: return "运营商接口超时,请重试"
+        case PNSCodeInterfaceTimeout: return "运营商接口超时,网络连接可能不稳定"
         case PNSCodeInterfaceDemoted: return "运营商维护中,功能暂不可用,请使用验证码登录"
         case PNSCodeInterfaceLimited: return "运营商调用次数已达上限,明日再试或使用验证码登录"
         case PNSCodePhoneBlack: return "该号码已被运营商管控(联通),请使用验证码登录"
@@ -233,8 +290,12 @@ final class PNSAuthManager {
         case PNSCodeEnvCheckFail: return "当前设备环境不支持认证,请使用验证码登录"
         case PNSCodeGetOperatorInfoFailed: return "获取运营商配置失败"
         case PNSCodeDecodeAppInfoFailed: return "SDK 鉴权信息解析失败"
-        case PNSCodeUnknownError: return "未知错误"
-        default: return "错误码 \(code)"
+        case PNSCodeUnknownError: return "网络连接异常,请检查网络设置后重试"
+        default:
+            if Self.isNetworkConnectionLost(code: code) {
+                return "网络连接已中断(错误码: \(code)),请检查网络设置后重试"
+            }
+            return "错误码 \(code)"
         }
     }
 }
