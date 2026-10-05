@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@alicloud/dm20151123": "^1.10.2",
+    "@alicloud/dypnsapi20170525": "^2.0.0",
     "@alicloud/dysmsapi20170525": "^4.6.0",
     "@alicloud/openapi-client": "^0.4.15",
     "better-sqlite3": "^13.0.3",

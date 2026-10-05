@@ -143,5 +143,22 @@ function migrate(): void {
     db.exec('ALTER TABLE temp_rooms ADD COLUMN guest_count INTEGER NOT NULL DEFAULT 0');
     console.log('[db] migrated: temp_rooms.guest_count');
   }
+  // 云端 E2EE 备份文件表
+  db.exec(`
+CREATE TABLE IF NOT EXISTS backup_files (
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  name        TEXT NOT NULL,
+  category    TEXT NOT NULL DEFAULT 'other',
+  sha256      TEXT NOT NULL,
+  total_size  INTEGER NOT NULL,
+  chunk_count INTEGER NOT NULL,
+  chunk_size  INTEGER NOT NULL,
+  state       TEXT NOT NULL DEFAULT 'uploading' CHECK (state IN ('uploading','complete')),
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL,
+  PRIMARY KEY (user_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_backup_user ON backup_files(user_id);`);
+  console.log('[db] ensured: backup_files');
 }
 migrate();

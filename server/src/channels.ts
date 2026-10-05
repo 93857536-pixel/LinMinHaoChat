@@ -10,7 +10,7 @@ const DysmsapiCtor: any = require('@alicloud/dysmsapi20170525').default;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const DmCtor: any = require('@alicloud/dm20151123').default;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const OpenApiClientCtor: any = require('@alicloud/openapi-client').default;
+const OpenApiConfig: any = require('@alicloud/openapi-client').Config;
 
 interface SendResult { ok: boolean; error?: string }
 
@@ -22,7 +22,7 @@ interface MailClient {
 }
 
 function newSmsClient(): SmsClient {
-  return new DysmsapiCtor(new OpenApiClientCtor({
+  return new DysmsapiCtor(new OpenApiConfig({
     accessKeyId: config.alibabaKeyId,
     accessKeySecret: config.alibabaKeySecret,
     endpoint: 'dysmsapi.aliyuncs.com',
@@ -30,7 +30,7 @@ function newSmsClient(): SmsClient {
 }
 
 function newMailClient(): MailClient {
-  return new DmCtor(new OpenApiClientCtor({
+  return new DmCtor(new OpenApiConfig({
     accessKeyId: config.alibabaKeyId,
     accessKeySecret: config.alibabaKeySecret,
     endpoint: 'dm.aliyuncs.com',

@@ -35,6 +35,10 @@ final class TempChatViewModel: ObservableObject {
         ws.onStatusChange = { [weak self] status in
             Task { @MainActor in self?.handle(status: status) }
         }
+        // 服务器 4001 = 短令牌失效/过期:重新 join 拿新令牌,更新待重连 URL(web 同策略)
+        ws.onAuthExpired = { [weak self] in
+            Task { @MainActor in self?.refreshWsToken() }
+        }
         await join()
     }
 
@@ -45,14 +49,14 @@ final class TempChatViewModel: ObservableObject {
             anonId = r.anonId
             UserDefaults.standard.set(r.anonId, forKey: "lmh.anon.\(roomId)")
             await loadHistory()
-            connectWs(wsUrl: r.wsUrl)
+            connectWs(wsUrl: r.wsUrl, wsToken: r.wsToken)
         } catch {
             statusText = "加入失败:\(error.localizedDescription)"
         }
     }
 
-    private func connectWs(wsUrl: String) {
-        // 服务器返回的 wsUrl 可能是相对路径("/ws")——相对则按 wss://linminhao.top 解析
+    /// 拼接 WS URL:服务器返回的相对路径按 wss://<host> 解析,并携带一次性 wsToken
+    private func buildWsURL(wsUrl: String, wsToken: String) -> URL? {
         let resolved: URL?
         if wsUrl.hasPrefix("ws://") || wsUrl.hasPrefix("wss://") {
             resolved = URL(string: wsUrl)
@@ -60,7 +64,20 @@ final class TempChatViewModel: ObservableObject {
             let path = wsUrl.hasPrefix("/") ? wsUrl : "/\(wsUrl)"
             resolved = URL(string: "wss://\(AppEnvironment.host)\(path)")
         }
-        guard let url = resolved else {
+        guard let base = resolved,
+              var comps = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        var items = comps.queryItems ?? []
+        if !items.contains(where: { $0.name == "wsToken" || $0.name == "token" }) {
+            items.append(URLQueryItem(name: "wsToken", value: wsToken))
+        }
+        comps.queryItems = items
+        return comps.url
+    }
+
+    private func connectWs(wsUrl: String, wsToken: String) {
+        guard let url = buildWsURL(wsUrl: wsUrl, wsToken: wsToken) else {
             statusText = "服务器返回了无效的 WebSocket 地址"
             return
         }
@@ -72,12 +89,14 @@ final class TempChatViewModel: ObservableObject {
         case .connected:
             statusText = "已连接 · 端到端加密"
             if hasConnectedBefore {
-                // 断线重连:重新 join 拿新一次性令牌 + 补收离线消息(web reconnectWs 同策略)
-                reconnectToServer()
+                // 断线重连成功:补收离线消息
+                Task { await pullNew() }
             }
             hasConnectedBefore = true
         case .reconnecting:
             statusText = "连接断开,正在重连…"
+            // 重连复用同一短令牌(服务器 5 分钟内允许重复连接),不再每次重新 join,
+            // 避免重连风暴触发 join 限流(429)。令牌失效(4001)由 onAuthExpired 回调处理。
         case .closed:
             statusText = "连接已关闭"
         case .idle, .connecting:
@@ -186,8 +205,8 @@ final class TempChatViewModel: ObservableObject {
         ws.disconnect()
     }
 
-    /// 重连后重新 join 拿新一次性 wsToken(web reconnectWs 逻辑)
-    private func reconnectToServer() {
+    /// 断线重连:重新 join 拿新一次性 wsToken 并更新待重连 URL(web reconnectWs 同策略)
+    private func refreshWsToken() {
         Task {
             do {
                 let r: TempAPI.JoinResult = try await TempAPI.join(roomId, anonId: anonId)
@@ -195,9 +214,17 @@ final class TempChatViewModel: ObservableObject {
                     anonId = r.anonId
                     UserDefaults.standard.set(r.anonId, forKey: "lmh.anon.\(roomId)")
                 }
-                await pullNew()
+                if let url = buildWsURL(wsUrl: r.wsUrl, wsToken: r.wsToken) {
+                    ws.updatePendingUrl(url)
+                }
+                // join 成功:恢复默认退避
+                ws.maxReconnectDelay = 15
+            } catch let e as ApiError where e.status == 429 {
+                // 服务器限流:调大退避上限,避免重连风暴持续打爆限流(web 同策略)
+                ws.maxReconnectDelay = 60
+                statusText = "请求过于频繁,60 秒后自动重连"
             } catch {
-                // join 限流等场景:保持现有连接即可,下轮重连再试
+                // 其他失败:保持现有重连节奏,下轮重连再试
             }
         }
     }

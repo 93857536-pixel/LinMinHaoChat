@@ -7,8 +7,10 @@ import { keysRouter } from './routes/keys.js';
 import { tempRouter } from './routes/temp.js';
 import { inviteRouter } from './routes/invite.js';
 import { chatRouter } from './routes/chat.js';
+import { pnsRouter } from './routes/pns.js';
 import { attachmentsRouter } from './routes/attachments.js';
 import { adminRouter } from './routes/admin.js';
+import { backupRouter } from './routes/backup.js';
 import { clientIp, rateLimit } from './ratelimit.js';
 import { logger } from './logger.js';
 import { healthCheckDb } from './db.js';
@@ -35,7 +37,11 @@ export function buildApp(): Express {
     next();
   });
 
-  app.use(express.json({ limit: config.maxBodyBytes }));
+  app.use((req, _res, next) => {
+    // 备份分块走独立大上限解析器(见下方 /api/backup 挂载),其余用全局小上限
+    if (req.path.startsWith('/api/backup')) return next();
+    express.json({ limit: config.maxBodyBytes })(req, _res, next);
+  });
 
   // 健康检查(无需认证,不含敏感信息)
   app.get('/api/health', (_req, res) => {
@@ -43,12 +49,15 @@ export function buildApp(): Express {
   });
 
   app.use('/api/auth', authRouter);
+  app.use('/api/pns', pnsRouter);
   app.use('/api/keys', keysRouter);
   app.use('/api/temp', tempRouter);
   app.use('/api/invite', inviteRouter);
   app.use('/api/chat', chatRouter);
   app.use('/api/attachments', attachmentsRouter);
   app.use('/api/admin', adminRouter);
+  // 备份:分块 body 上限 10MB(独立解析器,manifest 等小请求同样走这里)
+  app.use('/api/backup', express.json({ limit: config.maxBackupChunkBytes }), backupRouter);
 
   // 404
   app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));

@@ -10,23 +10,44 @@ targets:
     type: application
     platform: iOS
     sources:
-      - LinMinHaoChat
+      - path: LinMinHaoChat
+        excludes:
+          - Vendor   # Vendor 下 xcframework 仅通过 dependencies 链接,避免被当资源复制
+      # ATAuthSDK.bundle:授权页 UI 资源(图标/文案),必须加入 Copy Bundle Resources,
+      # 否则授权页点击按钮时 SDK 加载资源失败闪退
+      - path: LinMinHaoChat/Vendor/ATAuthSDK.bundle
+        buildPhase: resources
+    dependencies:
+      - framework: LinMinHaoChat/Vendor/xcframeworks/ATAuthSDK.xcframework
+        embed: false
+      - framework: LinMinHaoChat/Vendor/xcframeworks/YTXOperators.xcframework
+        embed: false
+      - framework: LinMinHaoChat/Vendor/xcframeworks/YTXMonitor.xcframework
+        embed: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.linminhao.chat
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1"
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.4"
+        CURRENT_PROJECT_VERSION: "3"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        # 骨架阶段:模拟器免签名构建;真机调试时去掉下面两行并填 DEVELOPMENT_TEAM
-        CODE_SIGN_IDENTITY: "-"
-        CODE_SIGNING_REQUIRED: NO
+        # 个人免费签名(lin_min_hao@icloud.com, team 4B7F8BR8R4 "MH L (Personal Team)")
+        # 免费签名 7 天有效,到期需重新构建安装;真机首次需在手机信任开发者证书
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 4B7F8BR8R4
+        SWIFT_OBJC_BRIDGING_HEADER: LinMinHaoChat/LinMinHaoChat-Bridging-Header.h
+        # ATAuthSDK 为静态库,内含 ObjC 分类;必须 -ObjC 否则分类方法被链接器丢弃,
+        # SDK 回调永不触发(表现为一键登录无限转圈/超时)
+        # 官方集成要求: -framework YTXOperators 显式链接 + Network.framework 弱依赖
+        OTHER_LDFLAGS: "-ObjC -framework \"YTXOperators\" -weak_framework Network"
     info:
       path: LinMinHaoChat/Info.plist
       properties:
         CFBundleDisplayName: LinMinHao Chat
+        CFBundleShortVersionString: "1.4"
+        CFBundleVersion: "3"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -36,3 +57,24 @@ targets:
           NSAllowsArbitraryLoads: false
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+
+  # XCUITest 自动化测试 target(模拟器跑,不用真机)
+  LinMinHaoChatUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: LinMinHaoChatUITests
+    dependencies:
+      - target: LinMinHaoChat
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.linminhao.chat.uitests
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+        TEST_TARGET_NAME: LinMinHaoChat
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 4B7F8BR8R4
+    info:
+      path: LinMinHaoChatUITests/Info.plist
+      properties:
+        CFBundleDisplayName: LinMinHaoChatUITests

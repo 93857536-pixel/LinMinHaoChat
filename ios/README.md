@@ -8,7 +8,7 @@
 project.yml             xcodegen 工程定义(唯一工程源,不提交 .xcodeproj)
 LinMinHaoChat/
   LinMinHaoChatApp.swift    入口 + 后台隐私模糊(scenePhase)
-  App/AppEnvironment.swift  后端地址(linminhao.top,App 自动连接,用户不可见)
+  App/AppEnvironment.swift  后端地址(chat.linminhao.top,App 自动连接,用户不可见)
   App/PrivacyMode.swift     强制隐私模式(永久开启,无水印,无关闭开关)
   App/AppState.swift        全局状态(登录态存 Keychain)
   Crypto/                   与 web/src/crypto 协议字节级兼容
@@ -17,7 +17,7 @@ LinMinHaoChat/
     SessionKeyUtil.swift    临时聊天会话密钥 + 分享链接 #k=
     IdentityCrypto.swift    ECDH P-256 + Ed25519 + 会话密钥包装 + PBKDF2 导出包
   Keychain/                 Keychain 存取(私钥/令牌)
-  Networking/               APIClient(https://linminhao.top/api)+ WebSocketClient
+  Networking/               APIClient(https://chat.linminhao.top/api)+ WebSocketClient
   Models/                   TempMsg / ChatMsg / DecryptedMsg / 访客标签
   ViewModels/               TempChatViewModel(临时聊天全链路)
   Views/                    Home / TempRoom / Chat / Login / Settings / 隐私模糊层

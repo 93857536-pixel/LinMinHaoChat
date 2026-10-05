@@ -9,6 +9,8 @@ struct ChatView: View {
 
     @StateObject private var viewModel: TempChatViewModel
     @State private var inputText = ""
+    @State private var showShareSheet = false
+    @State private var didAutoShare = false
     @FocusState private var inputFocused: Bool
 
     init(session: TempRoomSession) {
@@ -31,8 +33,11 @@ struct ChatView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                ShareLink(item: shareURL) {
-                    Image(systemName: "square.and.arrow.up")
+                Button {
+                    showShareSheet = true
+                } label: {
+                    Label("分享链接", systemImage: "square.and.arrow.up")
+                        .font(.caption)
                 }
             }
             .padding(.horizontal, 16)
@@ -41,22 +46,59 @@ struct ChatView: View {
 
             Divider()
 
-            // 消息列表
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(viewModel.messages) { msg in
-                            MessageBubbleView(msg: msg)
-                                .id(msg.id)
+            // 消息列表:为空时给创建者显示醒目的分享邀请卡片
+            if viewModel.messages.isEmpty {
+                VStack(spacing: 14) {
+                    Image(systemName: "square.and.arrow.up.circle.fill")
+                        .font(.system(size: 44))
+                        .foregroundStyle(Color.accentColor)
+                    Text("把链接发给朋友,加入加密聊天")
+                        .font(.headline)
+                    Text(shareURL)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .padding(.horizontal, 20)
+                    HStack(spacing: 12) {
+                        Button {
+                            UIPasteboard.general.string = shareURL
+                        } label: {
+                            Label("复制链接", systemImage: "doc.on.doc")
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
                         }
+                        .buttonStyle(.bordered)
+
+                        ShareLink(item: shareURL) {
+                            Label("发送", systemImage: "square.and.arrow.up")
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 24)
                 }
-                .onChange(of: viewModel.messages.count) { _, _ in
-                    if let last = viewModel.messages.last {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            proxy.scrollTo(last.id, anchor: .bottom)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.bottom, 40)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 10) {
+                            ForEach(viewModel.messages) { msg in
+                                MessageBubbleView(msg: msg)
+                                    .id(msg.id)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                    }
+                    .onChange(of: viewModel.messages.count) { _, _ in
+                        if let last = viewModel.messages.last {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                proxy.scrollTo(last.id, anchor: .bottom)
+                            }
                         }
                     }
                 }
@@ -92,11 +134,62 @@ struct ChatView: View {
         .navigationTitle("加密聊天")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.start() }
+        .onAppear {
+            // 创建者进入房间后自动弹出分享面板,方便立即把链接发给朋友
+            guard session.isCreator, !didAutoShare else { return }
+            didAutoShare = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                showShareSheet = true
+            }
+        }
         .onDisappear { viewModel.leave() }
+        .sheet(isPresented: $showShareSheet) {
+            ShareSheetView(link: shareURL)
+        }
     }
 
     private var shareURL: String {
         SessionKeyUtil.shareUrl(roomId: session.roomId, key: session.sessionKey)
+    }
+}
+
+/// 分享链接面板:显示完整链接 + 复制 + 系统分享
+struct ShareSheetView: View {
+    let link: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("把链接发给朋友,加入加密聊天")
+                .font(.headline)
+            Text(link)
+                .font(.caption)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 12))
+            HStack(spacing: 12) {
+                Button {
+                    UIPasteboard.general.string = link
+                    dismiss()
+                } label: {
+                    Label("复制链接", systemImage: "doc.on.doc")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.bordered)
+
+                ShareLink(item: link) {
+                    Label("发送", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            Spacer()
+        }
+        .padding(20)
+        .presentationDetents([.medium])
     }
 }
 

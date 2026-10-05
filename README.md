@@ -3,7 +3,7 @@
 **端到端加密(E2EE)聊天 · 原生 iOS App 为主客户端 · Web 为测试/兼容客户端**
 
 > 📱 正式客户端:原生 iOS App(开发中)。Web 版保留为开发测试 / E2EE 协议测试 / 兼容性测试客户端:
-> https://linminhao.top
+> https://chat.linminhao.top(后端基础设施;Web 前端测试入口,2026-10-05 起从根域名迁移)
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Node](https://img.shields.io/badge/Node-22+-blue.svg)
@@ -15,7 +15,7 @@
 
 ## ✨ 产品定位
 
-**iOS 原生 App 是正式用户客户端,linminhao.top 是后端基础设施。**
+**iOS 原生 App 是正式用户客户端,chat.linminhao.top 是后端基础设施(2026-10-05 从根域名迁到 chat 子域名)。**
 
 用户安装 App → 打开 → 登录/注册 或 临时聊天,全程不需要浏览器。用户不需要知道服务器 IP、API、WebSocket、数据库或域名——全部由 App 后台处理。
 
@@ -42,7 +42,7 @@ iOS 原生 App 是正式用户客户端:安装 → 打开 → 登录/注册 或 
 
 ### 开发测试 / 兼容性测试 → Web 版
 
-Web 前端保留为测试客户端,打开 **https://linminhao.top** 点击「发起临时聊天」即可联调。
+Web 前端保留为测试客户端,打开 **https://chat.linminhao.top** 点击「发起临时聊天」即可联调。
 临时聊天 7 天自动过期,刷新即焚(本地密钥立即清除)。
 
 ### 想自部署 → 5 分钟本地开发模式

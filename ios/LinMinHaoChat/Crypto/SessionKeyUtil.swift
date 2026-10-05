@@ -26,13 +26,13 @@ enum SessionKeyUtil {
     }
 
     /// 生成临时聊天分享链接(与 web buildTempShareUrl 同构):
-    /// https://linminhao.top/t/<roomId>#k=<b64url>
+    /// https://chat.linminhao.top/t/<roomId>#k=<b64url>
     static func shareUrl(roomId: String, key: SymmetricKey) -> String {
         "https://\(AppEnvironment.host)/t/\(roomId)#k=\(b64url(key))"
     }
 
     /// 从分享链接解析 (roomId, sessionKey)。支持:
-    /// - https://linminhao.top/t/<roomId>#k=... (标准)
+    /// - https://chat.linminhao.top/t/<roomId>#k=... (标准)
     /// - 任意主机路径(自部署/本地) —— 只取 path 最后一段 + fragment
     static func parseShareURL(_ url: URL) -> (roomId: String, key: SymmetricKey)? {
         guard let fragment = url.fragment, fragment.hasPrefix("k=") else { return nil }

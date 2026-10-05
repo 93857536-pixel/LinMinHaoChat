@@ -8,13 +8,13 @@
 ```
 iOS 原生 App(用户主要客户端)
     ↓ HTTPS API / WSS
-linminhao.top 后端(基础设施)
+chat.linminhao.top 后端(基础设施;2026-10-05 从根域名 linminhao.top 迁移到 chat 子域名,根域名不再承载应用服务)
     ↓
 E2EE 密文存储
 ```
 
 - **iOS App** = 用户主要使用的客户端
-- **linminhao.top** = 后端基础设施:API、WebSocket、数据存储、必要的管理服务
+- **chat.linminhao.top** = 后端基础设施:API、WebSocket、数据存储、必要的管理服务(2026-10-05 起;原根域名 linminhao.top 保留过渡期,不再承载新应用)
 - 服务器永远只持有密文;私钥在用户设备 Keychain,服务器无万能密钥
 
 ## 二、Web 前端处理
@@ -57,12 +57,12 @@ E2EE 密文存储
 
 ## 五、后端地址
 
-后端继续使用 **linminhao.top**,但用户不需要在浏览器输入该网址。
+后端使用 **chat.linminhao.top**,但用户不需要在浏览器输入该网址。
 
 App 内部自动连接:
 
-- API:`https://linminhao.top/api/…`
-- WebSocket:`wss://linminhao.top/…`
+- API:`https://chat.linminhao.top/api/…`
+- WebSocket:`wss://chat.linminhao.top/…`
 
 (具体路径按实际项目决定,当前实现见 [API.md](API.md))。
 
@@ -120,7 +120,7 @@ iOS 端:
 安装 App → 临时聊天 → 分享临时聊天邀请 → 双方 App 加入 → E2EE 通讯
 ```
 
-用户**不需要知道**:服务器 IP、API、WebSocket、数据库、聊天文件目录、linminhao.top。
+用户**不需要知道**:服务器 IP、API、WebSocket、数据库、聊天文件目录、chat.linminhao.top。
 这些全部由 App 后台处理。
 
 ---

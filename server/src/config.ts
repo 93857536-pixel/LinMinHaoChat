@@ -22,6 +22,9 @@ export interface AppConfig {
   alibabaKeySecret?: string;
   smsSignName?: string;
   smsTemplateCode?: string;
+  /** 号码认证服务(一键登录):认证方案 Code + AppSecret(客户端 SDK 用;服务端换号用 AccessKey) */
+  pnsSchemeCode?: string;
+  pnsAppSecret?: string;
   dmAccountName?: string;   // DirectMail 发信地址
   dmFromAlias?: string;
   // SMTP(邮件验证码)
@@ -33,6 +36,8 @@ export interface AppConfig {
   // limits
   maxBodyBytes: number;       // 普通 API
   maxAttachmentBytes: number; // 加密附件
+  maxBackupChunkBytes: number;// 备份分块 base64 上限(≈7.5MB raw/块,默认 10MB base64)
+  backupUserQuotaBytes: number; // 单用户备份配额
   tempRoomTtlMs: number;      // 临时房间过期
   tempRoomMaxMessages: number;
   inviteRoomTtlMs: number;    // 邀请房间过期(长效,保留聊天记录)
@@ -125,6 +130,8 @@ export function loadConfig(): AppConfig {
     alibabaKeySecret: env.ALIBABA_ACCESS_KEY_SECRET,
     smsSignName: env.SMS_SIGN_NAME,
     smsTemplateCode: env.SMS_TEMPLATE_CODE,
+    pnsSchemeCode: env.PNS_SCHEME_CODE,
+    pnsAppSecret: env.PNS_APP_SECRET,
     dmAccountName: env.DM_ACCOUNT_NAME,
     dmFromAlias: env.DM_FROM_ALIAS,
     smtpHost: env.MAIL_SMTP_HOST,
@@ -134,6 +141,8 @@ export function loadConfig(): AppConfig {
     smtpFromName: env.MAIL_FROM_NAME || 'LinMinHao Chat',
     maxBodyBytes: 128 * 1024,
     maxAttachmentBytes: 10 * 1024 * 1024,
+    maxBackupChunkBytes: parseInt(env.MAX_BACKUP_CHUNK_BYTES || String(10 * 1024 * 1024), 10),
+    backupUserQuotaBytes: parseInt(env.BACKUP_USER_QUOTA_BYTES || String(1 * 1024 * 1024 * 1024), 10),
     tempRoomTtlMs: 7 * 24 * 3600 * 1000,
     tempRoomMaxMessages: 2000,
     inviteRoomTtlMs: 365 * 24 * 3600 * 1000,  // 邀请房间 1 年(保留聊天记录)

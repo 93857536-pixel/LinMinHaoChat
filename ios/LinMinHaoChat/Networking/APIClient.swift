@@ -17,7 +17,7 @@ struct ApiError: Error, LocalizedError {
 }
 
 /// REST API 客户端 —— 与 web/src/api.ts 对应,统一错误处理。
-/// 基址自动指向 https://linminhao.top/api,用户无需也不应知道该地址。
+/// 基址自动指向 https://chat.linminhao.top/api,用户无需也不应知道该地址。
 enum APIClient {
     static let session: URLSession = {
         let c = URLSessionConfiguration.default
@@ -120,6 +120,14 @@ enum AuthAPI {
                       deviceId: String, ed25519Pub: String, ecdhPub: String) async throws -> AuthResult {
         try await APIClient.request("/auth/login",
                                     body: ["type": type, "target": target, "code": code,
+                                           "deviceId": deviceId, "ed25519Pub": ed25519Pub, "ecdhPub": ecdhPub])
+    }
+
+    /// 号码认证一键登录:客户端 SDK 拿到的 SpToken 换手机号(新号自动注册)
+    static func phoneCheck(spToken: String,
+                           deviceId: String, ed25519Pub: String, ecdhPub: String) async throws -> AuthResult {
+        try await APIClient.request("/pns/phone-check",
+                                    body: ["spToken": spToken,
                                            "deviceId": deviceId, "ed25519Pub": ed25519Pub, "ecdhPub": ecdhPub])
     }
 

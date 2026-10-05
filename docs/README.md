@@ -2,7 +2,7 @@
 
 **端到端加密(E2EE)临时通讯 + 永久账号通讯应用(原生 iOS App 主客户端 + Web 测试客户端)**
 
-> 📌 产品定位:https://linminhao.top 为后端基础设施,Web 前端为测试/兼容客户端,正式用户客户端是原生 iOS App。详见 [PRODUCT_DIRECTION.md](PRODUCT_DIRECTION.md)
+> 📌 产品定位:chat.linminhao.top 为后端基础设施(2026-10-05 从根域名迁移),Web 前端为测试/兼容客户端,正式用户客户端是原生 iOS App。详见 [PRODUCT_DIRECTION.md](PRODUCT_DIRECTION.md)
 
 ## 功能
 
