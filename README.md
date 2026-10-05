@@ -35,8 +35,8 @@
 
 ## 服务端
 
-- App 自动连接官方服务 `https://linminhao.top`,无需任何配置
-- 官方 Web 版(电脑浏览器可用):`https://linminhao.top`
+- App 自动连接官方服务 `https://chat.linminhao.top`,无需任何配置
+- 官方 Web 版(电脑浏览器可用):`https://chat.linminhao.top`
 - 账号:手机/邮箱验证码登录,**无密码**,首次使用自动创建账号
 
 ## 加密原理(简版)
