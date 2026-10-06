@@ -25,6 +25,10 @@ export interface AppConfig {
   /** 号码认证服务(一键登录):认证方案 Code + AppSecret(客户端 SDK 用;服务端换号用 AccessKey) */
   pnsSchemeCode?: string;
   pnsAppSecret?: string;
+  /** 实名认证(云市场身份证二要素):AppCode 仅存服务端;未配置则功能关闭 */
+  realnameAppCode?: string;
+  realnameDailyPerUser: number;  // 单用户每日核验次数上限(保护付费配额)
+  realnameTimeoutMs: number;     // 上游超时
   dmAccountName?: string;   // DirectMail 发信地址
   dmFromAlias?: string;
   // SMTP(邮件验证码)
@@ -132,6 +136,9 @@ export function loadConfig(): AppConfig {
     smsTemplateCode: env.SMS_TEMPLATE_CODE,
     pnsSchemeCode: env.PNS_SCHEME_CODE,
     pnsAppSecret: env.PNS_APP_SECRET,
+    realnameAppCode: env.REALNAME_APPCODE,
+    realnameDailyPerUser: parseInt(env.REALNAME_DAILY_PER_USER || '5', 10),
+    realnameTimeoutMs: parseInt(env.REALNAME_TIMEOUT_MS || '8000', 10),
     dmAccountName: env.DM_ACCOUNT_NAME,
     dmFromAlias: env.DM_FROM_ALIAS,
     smtpHost: env.MAIL_SMTP_HOST,

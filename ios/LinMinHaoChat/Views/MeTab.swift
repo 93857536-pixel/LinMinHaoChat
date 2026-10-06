@@ -8,6 +8,7 @@ struct MeTab: View {
     @State private var logContent = ""
     @State private var showLogSheet = false
     @State private var showNicknameEdit = false
+    @State private var showRealName = false
     @State private var uploadStatus: UploadStatus = .idle
 
     enum UploadStatus: Equatable {
@@ -77,6 +78,28 @@ struct MeTab: View {
                                 Text(appState.displayName)
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption).foregroundStyle(.tertiary)
+                            }
+                        }
+                        Button {
+                            showRealName = true
+                        } label: {
+                            HStack(spacing: 12) {
+                                meIcon("person.text.rectangle", .green)
+                                Text("实名认证")
+                                Spacer()
+                                if appState.realnameVerified {
+                                    Image(systemName: "checkmark.seal.fill")
+                                        .font(.caption).foregroundStyle(.green)
+                                    Text(appState.realnameNameMasked ?? "已认证")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text("未认证")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
                                 Image(systemName: "chevron.right")
                                     .font(.caption).foregroundStyle(.tertiary)
                             }
@@ -194,6 +217,10 @@ struct MeTab: View {
             }
             .sheet(isPresented: $showNicknameEdit) {
                 NicknameEditSheet()
+                    .environmentObject(appState)
+            }
+            .sheet(isPresented: $showRealName) {
+                RealNameView()
                     .environmentObject(appState)
             }
         }

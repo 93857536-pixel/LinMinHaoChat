@@ -110,6 +110,11 @@ enum AuthAPI {
             let handle: String?
             let nickname: String?
             let createdAt: Int64?
+            // 实名认证状态
+            let realnameStatus: String?
+            let realnameVerified: Bool?
+            let realnameNameMasked: String?
+            let realnameVerifiedAt: Int64?
         }
         let user: User
     }
@@ -173,6 +178,41 @@ enum AuthAPI {
 }
 
 // MARK: - 密钥管理(与 server/src/routes/keys.ts 对齐)
+
+/// 实名认证(服务端代理云市场「身份证二要素」;AppCode 只存服务端,客户端不持有)
+enum RealNameAPI {
+    struct Result: Decodable {
+        let ok: Bool
+        /// none | verified | mismatch | no_record
+        let status: String
+        let verified: Bool
+        let nameMasked: String?
+        let idcardMasked: String?
+        let verifiedAt: Int64?
+    }
+    /// 是否已开通(服务端未配置 AppCode 时为 false)
+    struct StatusResult: Decodable {
+        let ok: Bool
+        let enabled: Bool?
+        let status: String
+        let verified: Bool
+        let nameMasked: String?
+        let idcardMasked: String?
+        let verifiedAt: Int64?
+    }
+
+    /// 提交实名核验(name 真实姓名,idcard 18 位身份证号)
+    static func verify(name: String, idcard: String, token: String) async throws -> Result {
+        try await APIClient.request("/realname/verify",
+                                    body: ["name": name, "idcard": idcard],
+                                    token: token)
+    }
+
+    /// 查询当前实名状态
+    static func status(token: String) async throws -> StatusResult {
+        try await APIClient.request("/realname/status", token: token)
+    }
+}
 
 enum KeysAPI {
     struct KeysBundle: Decodable {

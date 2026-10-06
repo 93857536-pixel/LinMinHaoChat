@@ -13,6 +13,7 @@ import { attachmentsRouter } from './routes/attachments.js';
 import { adminRouter } from './routes/admin.js';
 import { backupRouter } from './routes/backup.js';
 import { diagRouter } from './routes/diag.js';
+import { realnameRouter } from './routes/realname.js';
 import { clientIp, rateLimit } from './ratelimit.js';
 import { logger } from './logger.js';
 import { healthCheckDb } from './db.js';
@@ -64,6 +65,9 @@ export function buildApp(): Express {
   // 诊断日志上传(iOS「上传日志到服务器」)。刻意用 /api/diag/* 前缀:
   // CF 边缘对 /api/logs* 有遮蔽规则,走 /api/logs/device 会 403。
   app.use('/api/diag', diagRouter);
+
+  // 实名认证(云市场「身份证二要素」,服务端代理;AppCode 只存服务端,不下发客户端)
+  app.use('/api/realname', realnameRouter);
 
   // 404
   app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));

@@ -21,6 +21,11 @@ CREATE TABLE IF NOT EXISTS users (
   email_masked  TEXT,
   handle        TEXT,
   nickname      TEXT,
+  rn_status     TEXT,
+  rn_name_mask  TEXT,
+  rn_idcard_mask TEXT,
+  rn_hash       TEXT,
+  rn_verified_at INTEGER,
   created_at    INTEGER NOT NULL,
   banned        INTEGER NOT NULL DEFAULT 0,
   ban_reason    TEXT,
@@ -166,6 +171,20 @@ function migrate(): void {
   if (!userCols.some((c) => c.name === 'nickname')) {
     db.exec('ALTER TABLE users ADD COLUMN nickname TEXT');
     console.log('[db] migrated: users.nickname');
+  }
+  // 实名认证:只存状态 + 掩码 + 不可逆指纹,绝不存明文身份证号
+  for (const def of [
+    'rn_status TEXT',
+    'rn_name_mask TEXT',
+    'rn_idcard_mask TEXT',
+    'rn_hash TEXT',
+    'rn_verified_at INTEGER',
+  ]) {
+    const col = def.split(' ')[0];
+    if (!userCols.some((c) => c.name === col)) {
+      db.exec(`ALTER TABLE users ADD COLUMN ${def}`);
+      console.log(`[db] migrated: users.${col}`);
+    }
   }
   // 云端 E2EE 备份文件表
   db.exec(`

@@ -20,6 +20,12 @@ final class AppState: ObservableObject {
     /// 注册时间(毫秒)
     @Published var userCreatedAt: Int64?
 
+    // MARK: 实名认证状态(none/verified/mismatch/no_record)
+    @Published var realnameStatus: String = "none"
+    @Published var realnameVerified: Bool = false
+    @Published var realnameNameMasked: String?
+    @Published var realnameVerifiedAt: Int64?
+
     /// 当前设备身份
     @Published var identity: DeviceIdentity?
 
@@ -49,6 +55,10 @@ final class AppState: ObservableObject {
         static let handle = "lmh.auth.handle"
         static let nickname = "lmh.auth.nickname"
         static let createdAt = "lmh.auth.createdAt"
+        static let rnStatus = "lmh.auth.rnStatus"
+        static let rnVerified = "lmh.auth.rnVerified"
+        static let rnNameMasked = "lmh.auth.rnNameMasked"
+        static let rnVerifiedAt = "lmh.auth.rnVerifiedAt"
     }
 
     init() {
@@ -70,6 +80,13 @@ final class AppState: ObservableObject {
         userNickname = d.string(forKey: ProfileKeys.nickname)
         if d.object(forKey: ProfileKeys.createdAt) != nil {
             userCreatedAt = d.object(forKey: ProfileKeys.createdAt) as? Int64
+        }
+        // 实名状态(先本地显示,随后 refreshProfile 与服务端对齐)
+        realnameStatus = d.string(forKey: ProfileKeys.rnStatus) ?? "none"
+        realnameVerified = d.bool(forKey: ProfileKeys.rnVerified)
+        realnameNameMasked = d.string(forKey: ProfileKeys.rnNameMasked)
+        if d.object(forKey: ProfileKeys.rnVerifiedAt) != nil {
+            realnameVerifiedAt = d.object(forKey: ProfileKeys.rnVerifiedAt) as? Int64
         }
 
         // 尝试加载身份
@@ -131,6 +148,10 @@ final class AppState: ObservableObject {
                     let handle: String?
                     let nickname: String?
                     let createdAt: Int64?
+                    let realnameStatus: String?
+                    let realnameVerified: Bool?
+                    let realnameNameMasked: String?
+                    let realnameVerifiedAt: Int64?
                 }
                 let ok: Bool
                 let user: User
@@ -145,10 +166,28 @@ final class AppState: ObservableObject {
             if let h = me.user.handle { d.set(h, forKey: ProfileKeys.handle) }
             if let n = userNickname { d.set(n, forKey: ProfileKeys.nickname) }
             if let ts = me.user.createdAt { d.set(ts, forKey: ProfileKeys.createdAt) }
+            // 实名状态以服务端为准
+            applyRealname(status: me.user.realnameStatus ?? "none",
+                          verified: me.user.realnameVerified ?? false,
+                          nameMasked: me.user.realnameNameMasked,
+                          verifiedAt: me.user.realnameVerifiedAt)
         } catch {
             // 网络异常/令牌过期时不打断使用;本地缓存已可显示
             print("[AppState] refreshProfile failed: \(error.localizedDescription)")
         }
+    }
+
+    /// 应用实名状态(服务端返回 / 认证成功后调用),并持久化
+    func applyRealname(status: String, verified: Bool, nameMasked: String?, verifiedAt: Int64?) {
+        realnameStatus = status
+        realnameVerified = verified
+        realnameNameMasked = nameMasked
+        realnameVerifiedAt = verifiedAt
+        let d = UserDefaults.standard
+        d.set(status, forKey: ProfileKeys.rnStatus)
+        d.set(verified, forKey: ProfileKeys.rnVerified)
+        if let nameMasked { d.set(nameMasked, forKey: ProfileKeys.rnNameMasked) } else { d.removeObject(forKey: ProfileKeys.rnNameMasked) }
+        if let verifiedAt { d.set(verifiedAt, forKey: ProfileKeys.rnVerifiedAt) } else { d.removeObject(forKey: ProfileKeys.rnVerifiedAt) }
     }
 
     func logout() {
@@ -158,11 +197,16 @@ final class AppState: ObservableObject {
         userHandle = nil
         userNickname = nil
         userCreatedAt = nil
+        realnameStatus = "none"
+        realnameVerified = false
+        realnameNameMasked = nil
+        realnameVerifiedAt = nil
         identity = nil
         KeychainStore.delete(account: "lmh.auth.token")
         KeychainStore.delete(account: "lmh.auth.session")
         let d = UserDefaults.standard
-        [ProfileKeys.userId, ProfileKeys.handle, ProfileKeys.nickname, ProfileKeys.createdAt]
+        [ProfileKeys.userId, ProfileKeys.handle, ProfileKeys.nickname, ProfileKeys.createdAt,
+         ProfileKeys.rnStatus, ProfileKeys.rnVerified, ProfileKeys.rnNameMasked, ProfileKeys.rnVerifiedAt]
             .forEach { d.removeObject(forKey: $0) }
     }
 
