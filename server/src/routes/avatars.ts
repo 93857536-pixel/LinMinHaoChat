@@ -9,7 +9,8 @@ import { logger } from '../logger.js';
  * 用户头像(用户自主上传):
  * - 头像不是聊天内容,属于「公开给好友的身份标识」,故以明文文件落盘(dataRoot/avatars/<userId>.<ext>)
  * - 上传:原始图片字节(image/jpeg|image/png|image/webp),服务器按 magic bytes 校验真实类型(不信 Content-Type)
- * - 下载:仅本人 / 好友 / 同一会话成员可见 —— 未授权一律 404(不泄露「该用户是否存在头像」)
+ * - 下载:任何【已登录】用户可见 —— 需求:别人在「查找好友 → 添加」时(还不是好友)就要能看到你的
+ *   头像与用户名。未登录 401;用户不存在/被封禁 404(与「没有头像」同响应)。
  * - 大小上限 2MB;iOS 端上传前已压到 512px 方图(顺带清掉 EXIF/GPS)
  */
 export const avatarsRouter = Router();
@@ -30,18 +31,14 @@ function mimeOf(ext: string): string {
   return ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
 }
 
-/** 可见性:本人 / 好友(双向关系行) / 同一会话成员 */
-function canViewAvatar(me: number, target: number): boolean {
-  if (me === target) return true;
-  const friend = db.prepare(
-    'SELECT 1 FROM friendships WHERE (user_id=? AND friend_id=?) OR (user_id=? AND friend_id=?)'
-  ).get(me, target, target, me);
-  if (friend) return true;
-  const roommate = db.prepare(
-    `SELECT 1 FROM room_members a JOIN room_members b ON a.room_id = b.room_id
-     WHERE a.user_id=? AND b.user_id=? LIMIT 1`
-  ).get(me, target);
-  return !!roommate;
+/**
+ * 可见性:任何【已登录】用户之间互相可见 —— 需求是别人在「查找好友 → 添加」阶段就要能看到你的
+ * 头像与用户名(此时双方还不是好友)。头像本身是用户主动选定的展示图。
+ * 目标用户不存在/被封禁 → 404(与「没有头像」同一响应,不泄露账号是否存在)。
+ */
+function canViewAvatar(target: number): boolean {
+  const row = db.prepare('SELECT banned FROM users WHERE id=?').get(target) as { banned: number } | undefined;
+  return !!row && !row.banned;
 }
 
 avatarsRouter.use(authRequired);
@@ -111,7 +108,7 @@ avatarsRouter.get('/:userId', (req, res) => {
   const rl = rateLimit(`avatar:get:${me}`, 300, 60_000);
   if (!rl.ok) return res.status(429).json({ error: 'rate_limited', retryAfterSec: rl.retryAfterSec });
 
-  if (!canViewAvatar(me, target)) return res.status(404).json({ error: 'not_found' });
+  if (!canViewAvatar(target)) return res.status(404).json({ error: 'not_found' });
 
   const row = db.prepare('SELECT avatar_mime, avatar_updated_at FROM users WHERE id=?')
     .get(target) as { avatar_mime: string | null; avatar_updated_at: number | null } | undefined;
