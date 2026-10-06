@@ -83,9 +83,7 @@ struct TempChatView: View {
                 TextField("加密消息", text: $inputText, axis: .vertical)
                     .lineLimit(1...5)
                     .focused($inputFocused)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 18))
+                    .lmhChatInputBubble()
 
                 Button {
                     let text = inputText

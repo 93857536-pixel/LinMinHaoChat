@@ -60,7 +60,7 @@ struct InviteChatView: View {
                 .font(.system(size: 48)).foregroundStyle(Color.accentColor)
             Text("邀请房间需要 6 位验证码").font(.headline)
             TextField("验证码", text: $codeInput)
-                .textFieldStyle(.roundedBorder).keyboardType(.numberPad)
+                .lmhInput().keyboardType(.numberPad)
                 .autocorrectionDisabled(true)
             Button("加入房间") {
                 let code = codeInput
@@ -119,8 +119,7 @@ struct InviteChatView: View {
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("加密消息", text: $inputText, axis: .vertical)
                     .lineLimit(1...5).focused($inputFocused)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 18))
+                    .lmhChatInputBubble()
 
                 Button {
                     let text = inputText

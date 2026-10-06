@@ -56,7 +56,7 @@ struct DiscoverTab: View {
                             .font(.body)
                         TextField("粘贴邀请链接(含 #k= 密钥)", text: $joinLink, axis: .vertical)
                             .lineLimit(1...3)
-                            .textFieldStyle(.roundedBorder)
+                            .lmhInput()
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                         Button("加入") {

@@ -33,7 +33,7 @@ struct FindFriendsSheet: View {
                     }
                 }
                 .padding(10)
-                .background(Color(.secondarySystemBackground))
+                .background(Color(.secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)

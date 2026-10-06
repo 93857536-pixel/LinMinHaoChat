@@ -25,7 +25,7 @@ struct NewDMSheet: View {
                         .font(.caption).foregroundStyle(.secondary)
                     TextField("输入数字用户 ID", text: $peerIdInput)
                         .keyboardType(.numberPad)
-                        .textFieldStyle(.roundedBorder)
+                        .lmhInput()
                 }
                 .padding(.horizontal, 20)
 
