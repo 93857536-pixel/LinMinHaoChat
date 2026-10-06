@@ -29,8 +29,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.linminhao.chat
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1"
-        MARKETING_VERSION: "1.5"
-        CURRENT_PROJECT_VERSION: "4"
+        MARKETING_VERSION: "1.6"
+        CURRENT_PROJECT_VERSION: "5"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         # 个人免费签名(lin_min_hao@icloud.com, team 4B7F8BR8R4 "MH L (Personal Team)")
@@ -46,8 +46,8 @@ targets:
       path: LinMinHaoChat/Info.plist
       properties:
         CFBundleDisplayName: LinMinHao Chat
-        CFBundleShortVersionString: "1.5"
-        CFBundleVersion: "4"
+        CFBundleShortVersionString: "1.6"
+        CFBundleVersion: "5"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -55,6 +55,10 @@ targets:
         NSFaceIDUsageDescription: 用于解锁本地存储的加密密钥
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: false
+        # 自定义 scheme:lmhchat://invite/<id>(配合系统链接 https://chat.linminhao.top/i/<id>)
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - lmhchat
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
 

@@ -104,6 +104,8 @@ final class InviteChatViewModel: ObservableObject {
             wsToken = j.wsToken
             wsUrl = j.wsUrl
             UserDefaults.standard.set(j.anonId, forKey: "anon:\(j.roomId)")
+            // 持久化验证码:wsToken 失效(>5min)后可免重输直接重 join
+            UserDefaults.standard.set(code, forKey: "lmh.invite.code.\(inviteId)")
 
             // 持久化密钥(刷新后保留聊天记录)
             let b64 = SessionKeyUtil.b64url(key)

@@ -3,6 +3,7 @@ import SwiftUI
 /// 首页 —— 用户打开 App 直接看到:LinMinHao Chat + 临时聊天 / 登录注册 / 设置
 struct HomeView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var showInviteCreate = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,6 +44,16 @@ struct HomeView: View {
                         .padding(.vertical, 6)
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Button {
+                    showInviteCreate = true
+                } label: {
+                    Label("创建邀请聊天", systemImage: "envelope.badge")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
                 .controlSize(.large)
 
                 NavigationLink {
@@ -102,5 +113,8 @@ struct HomeView: View {
         }
         .navigationTitle("LinMinHao Chat")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showInviteCreate) {
+            InviteCreateSheet()
+        }
     }
 }
