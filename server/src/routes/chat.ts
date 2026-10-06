@@ -119,7 +119,9 @@ chatRouter.post('/rooms/:id/keys', (req, res) => {
   const key = String(wrappedKey || '');
   if (key.length < 8 || key.length > 4096) return res.status(400).json({ error: 'bad_key' });
   const dev = String(deviceId || 'default').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 'default';
-  // 新成员必须先在成员表(群聊邀请流程:创建者先调 /rooms/:id/add-member)
+  // ⚠️ 目标必须是本房间成员:否则任意成员可给任意账号/设备写入或覆盖密钥包
+  // (INSERT OR REPLACE 会覆盖他人已上传的 wrapped key → 密钥包篡改/DoS)
+  if (!isMember(roomId, uid)) return res.status(403).json({ error: 'target_not_member' });
   db.prepare('INSERT OR REPLACE INTO room_keys (room_id, member_user_id, device_id, wrapped_key) VALUES (?,?,?,?)')
     .run(roomId, uid, dev, key);
   logger.info('room_key_added', { roomId, for: uid, by: req.user!.id });
@@ -274,9 +276,16 @@ chatRouter.post('/rooms/:id/forward', (req, res) => {
   
   const srcRoom = db.prepare('SELECT id FROM rooms WHERE id=?').get(srcRoomId);
   if (!srcRoom) return res.status(404).json({ error: 'source_room_not_found' });
-  
+
+  // ⚠️ 调用者必须同时是「源房间」成员:否则可借 404/200 差异探测任意消息是否存在
+  if (!isMember(srcRoomId, req.user!.id)) return res.status(404).json({ error: 'source_room_not_found' });
+
   const srcMsg = db.prepare('SELECT id, kind, seq, ts, cipher_path, meta_enc FROM messages WHERE id=? AND room_id=?').get(sourceMsgId, srcRoomId) as MsgRow | undefined;
   if (!srcMsg) return res.status(404).json({ error: 'source_msg_not_found' });
+
+  // 密文/IV 形状校验(与 /messages 一致,防非法值落库)
+  if (typeof iv !== 'string' || iv.length > 64) return res.status(400).json({ error: 'bad_iv' });
+  if (typeof cipher !== 'string' || cipher.length < 8) return res.status(400).json({ error: 'bad_cipher' });
   
   // 校验时间戳
   const now = Number(clientTs);
@@ -357,8 +366,8 @@ chatRouter.get('/starred', (req, res) => {
     ts: r.ts,
     kind: r.kind,
     metaEnc: r.meta_enc,
-    cipherPath: r.cipher_path,
     iv: r.iv
+    // 不返回 cipherPath:服务器内部相对路径,客户端取正文走各自房间的历史接口
   }));
   
   res.json({ ok: true, starred: result });

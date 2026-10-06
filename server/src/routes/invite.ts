@@ -79,8 +79,15 @@ inviteRouter.post('/create', (req, res) => {
   });
 });
 
-/** 邀请信息(用于打开链接后检查房间状态) */
+/** 邀请信息(用于打开链接后检查房间状态)
+ *  ⚠️ 刻意不返回 roomId:roomId 是读取聊天历史的唯一凭证(见 temp.ts),
+ *  若未验码就下发,则「邀请码」形同虚设 —— 拿到链接(含 #k= 密钥)的人可绕过验证码直读明文。
+ *  roomId 只在 POST /:id/join 验证码通过后才返回。
+ */
 inviteRouter.get('/:id', (req, res) => {
+  const ip = clientIp(req);
+  const rl = rateLimit(`invite:info:${ip}`, 60, 60_000);
+  if (!rl.ok) return res.status(429).json({ error: 'rate_limited', retryAfterSec: rl.retryAfterSec });
   const inv = getInvite(String(req.params.id));
   if (!inv) return res.status(404).json({ error: 'not_found' });
   const room = roomExists(inv.room_id);
@@ -91,7 +98,6 @@ inviteRouter.get('/:id', (req, res) => {
   res.json({
     ok: true,
     inviteId: inv.id,
-    roomId: inv.room_id,
     codeExpired,
     roomExpired,
     roomStatus: room.status,
@@ -200,15 +206,18 @@ inviteRouter.post('/:id/join', async (req, res) => {
   res.json({ ok: true, roomId: inv.room_id, anonId, displayName: display, wsToken, wsUrl: '/ws' });
 });
 
-/** 获取邀请房间的聊天记录(验证码通过后由客户端持有 roomId 走 temp API,此接口用于展示房间信息) */
+/** 获取邀请房间的聊天记录(验证码通过后由客户端持有 roomId 走 temp API,此接口用于展示房间信息)
+ *  ⚠️ 同 GET /:id,不返回 roomId(未验码不得下发读取凭证)
+ */
 inviteRouter.get('/:id/room', (req, res) => {
+  const rl = rateLimit(`invite:room:${clientIp(req)}`, 60, 60_000);
+  if (!rl.ok) return res.status(429).json({ error: 'rate_limited', retryAfterSec: rl.retryAfterSec });
   const inv = getInvite(String(req.params.id));
   if (!inv) return res.status(404).json({ error: 'not_found' });
   const room = roomExists(inv.room_id);
   if (!room) return res.status(404).json({ error: 'room_not_found' });
   res.json({
     ok: true,
-    roomId: inv.room_id,
     createdAt: room.created_at,
     expiresAt: room.expires_at,
     expired: Date.now() > room.expires_at,

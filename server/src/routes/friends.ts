@@ -49,6 +49,9 @@ friendsRouter.get('/', (req, res) => {
  * 返回脱敏信息,最多 20 条;排除自己
  */
 friendsRouter.get('/search', (req, res) => {
+  // 限流:防止已登录用户批量枚举全站账号(返回 handle + 掩码号码)
+  const rl = rateLimit(`friend:search:${req.user!.id}`, 30, 60_000);
+  if (!rl.ok) return res.status(429).json({ error: 'rate_limited', retryAfterSec: rl.retryAfterSec });
   const q = String(req.query.query || '').trim().replace(/[<>"']/g, '').slice(0, 64);
   if (q.length < 2) return res.status(400).json({ error: 'query_too_short' });
   const like = q.replace(/%/g, '\\%').replace(/_/g, '\\_');

@@ -57,6 +57,8 @@ export function generateHandle(ts: number): string {
 export function sanitizeNickname(raw: unknown): string {
   const s = String(raw ?? '')
     .replace(/[<>&"'`\\]/g, '')
+    // 控制字符(C0/C1)+ 零宽/双向控制符:防止用不可见字符伪造身份、隐藏内容或撑爆排版
+    .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 24);

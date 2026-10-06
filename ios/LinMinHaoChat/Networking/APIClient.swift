@@ -435,7 +435,8 @@ enum InviteAPI {
     struct InfoResult: Decodable {
         let ok: Bool
         let inviteId: String
-        let roomId: String
+        /// 未验证码前服务端不再下发 roomId(防绕过邀请码直读历史),仅 join 成功后返回
+        let roomId: String?
         let codeExpired: Bool
         let roomExpired: Bool
         let roomStatus: String
@@ -561,7 +562,8 @@ struct StarredMsg: Decodable, Identifiable {
     let ts: Int64
     let kind: String
     let metaEnc: String?
-    let cipherPath: String
+    /// 服务端已不再下发(内部相对路径);保留为可选仅为兼容旧后端
+    let cipherPath: String?
     let iv: String
 }
 

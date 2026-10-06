@@ -4,6 +4,7 @@ import { db } from '../db.js';
 import { store } from '../storage.js';
 import { newId, randomToken } from '../crypto-util.js';
 import { rateLimit, clientIp } from '../ratelimit.js';
+import { jwtVerify } from 'jose';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 
@@ -93,7 +94,7 @@ tempRouter.post('/rooms/:id/join', (req, res) => {
 });
 
 /** 发送密文消息(客户端已加密;服务器只落盘 + 编号,不解密) */
-tempRouter.post('/rooms/:id/messages', (req, res) => {
+tempRouter.post('/rooms/:id/messages', async (req, res) => {
   const ip = clientIp(req);
   const r = rateLimit(`temp:msg:${ip}`, 60, 60_000);
   if (!r.ok) return res.status(429).json({ error: 'rate_limited', retryAfterSec: r.retryAfterSec });
@@ -104,6 +105,27 @@ tempRouter.post('/rooms/:id/messages', (req, res) => {
   if (room.status !== 'active') return res.status(403).json({ error: 'room_banned' });
   if (Date.now() > room.expires_at) return res.status(403).json({ error: 'room_expired' });
   if (room.msg_count >= config.tempRoomMaxMessages) return res.status(403).json({ error: 'room_full' });
+
+  // ⚠️ 身份防冒充:anonId 完全由客户端提供。若不校验,任何人都能把消息伪装成
+  // 某个账号(u<N>)发的。账号身份必须由本房间 join 流程发放过(见 sessions.device),
+  // 或由持有该账号 JWT 的请求提交;游客(g*)保持原行为(匿名房间本就不保证身份)。
+  const claimedAnon = String(req.body?.anonId || '').slice(0, 24);
+  if (/^u\d+$/.test(claimedAnon)) {
+    const issued = db.prepare('SELECT 1 FROM sessions WHERE device LIKE ? LIMIT 1')
+      .get(`temp:${roomId}:${claimedAnon}%`);
+    let identityOk = !!issued;
+    if (!identityOk) {
+      const h = String(req.headers.authorization || '');
+      const tk = h.startsWith('Bearer ') ? h.slice(7) : '';
+      if (tk) {
+        try {
+          const { payload } = await jwtVerify(tk, new TextEncoder().encode(config.jwtSecret));
+          identityOk = payload.role === 'user' && `u${payload.sub}` === claimedAnon;
+        } catch { /* 无效 token:保持 identityOk=false */ }
+      }
+    }
+    if (!identityOk) return res.status(403).json({ error: 'identity_mismatch' });
+  }
 
   const { iv, cipher, seq: clientSeq, ts: clientTs } = req.body || {};
   if (typeof iv !== 'string' || iv.length > 64) return res.status(400).json({ error: 'bad_iv' });
@@ -127,10 +149,10 @@ tempRouter.post('/rooms/:id/messages', (req, res) => {
   const rel = store.saveMessageCipher(roomId, seq, Buffer.from(cipher, 'utf8'));
   const id = newId('m_');
   db.prepare('INSERT INTO messages (id, room_id, kind, seq, sender_anon, cipher_path, iv, aad, meta_enc, ts) VALUES (?,?,?,?,?,?,?,?,?,?)')
-    .run(id, roomId, 'msg', seq, String(req.body?.anonId || '').slice(0, 24) || null, rel, iv, aad, metaEnc, now);
+    .run(id, roomId, 'msg', seq, claimedAnon || null, rel, iv, aad, metaEnc, now);
   db.prepare('UPDATE temp_rooms SET msg_count=?, last_activity=? WHERE id=?').run(seq, now, roomId);
 
-  broadcast(roomId, { type: 'msg', roomId, seq, id, anonId: String(req.body?.anonId || '').slice(0, 24) || null, ts: now });
+  broadcast(roomId, { type: 'msg', roomId, seq, id, anonId: claimedAnon || null, ts: now });
   res.json({ ok: true, seq, id, ts: now });
 });
 

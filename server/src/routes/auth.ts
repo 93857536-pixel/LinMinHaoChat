@@ -196,9 +196,15 @@ authRouter.post('/nickname', authRequired, (req, res) => {
   res.json({ ok: true, user: { id: req.user!.id, handle: u?.handle, nickname: u?.nickname ?? nickname } });
 });
 
-/** 登出:作废当前 session */
+/** 登出:作废当前 session
+ *  ⚠️ 凭证型撤销:持有 sessionId 即视为持有该会话凭证(与 refresh token 撤销同理),
+ *  故此端点不强制 JWT(iOS 会带 token,web 旧版不带 —— 保持兼容)。
+ *  加 IP 限流,避免被用来做批量探测/销毁。
+ */
 authRouter.post('/logout', (req, res) => {
-  const sid = String((req.body || {}).sessionId || '');
+  const r = rateLimit(`logout:${clientIp(req)}`, 30, 60_000);
+  if (!r.ok) return res.status(429).json({ error: 'rate_limited', retryAfterSec: r.retryAfterSec });
+  const sid = String((req.body || {}).sessionId || '').slice(0, 128);
   if (sid) db.prepare('DELETE FROM sessions WHERE id=?').run(sid);
   res.json({ ok: true });
 });

@@ -73,9 +73,12 @@ attachmentsRouter.post('/', (req, res) => {
 attachmentsRouter.get('/:id', (req, res) => {
   const attId = String(req.params.id);
   if (!/^a_[A-Za-z0-9_-]+$/.test(attId)) return res.status(400).json({ error: 'bad_id' });
+  // ⚠️ attId 允许含 `_`(base64url 字符集),而 `_` / `%` 是 SQL LIKE 通配符 → 必须转义,
+  // 否则可用 `a______` 之类模式匹配到非目标附件行
+  const esc = attId.replace(/[\\%_]/g, (c) => '\\' + c);
   const row = db.prepare(
-    `SELECT m.cipher_path, m.room_id FROM messages m WHERE m.kind='attachment' AND m.meta_enc LIKE ?`
-  ).get(`%"attId":"${attId}"%`) as { cipher_path: string; room_id: string } | undefined;
+    `SELECT m.cipher_path, m.room_id FROM messages m WHERE m.kind='attachment' AND m.meta_enc LIKE ? ESCAPE '\\'`
+  ).get(`%"attId":"${esc}"%`) as { cipher_path: string; room_id: string } | undefined;
   if (!row) return res.status(404).json({ error: 'not_found' });
   const member = db.prepare('SELECT 1 FROM room_members WHERE room_id=? AND user_id=?').get(row.room_id, req.user!.id);
   if (!member) return res.status(403).json({ error: 'forbidden' });
