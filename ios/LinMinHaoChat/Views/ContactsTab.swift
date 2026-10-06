@@ -23,7 +23,10 @@ struct ContactsTab: View {
                             MeAccountView()
                         } label: {
                             HStack(spacing: 12) {
-                                ChatAvatar(label: appState.displayName, isGroup: false)
+                                UserAvatar(userId: appState.userId ?? 0,
+                                           label: appState.displayName,
+                                           hasAvatar: appState.avatarUpdatedAt != nil,
+                                           size: 44)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(appState.displayName)
                                         .font(.body)
@@ -136,10 +139,11 @@ struct ContactsTab: View {
 
     private func friendRow(_ f: FriendsAPI.Friend) -> some View {
         HStack(spacing: 12) {
-            ChatAvatar(label: f.handle, isGroup: false)
+            // 头像 + 用户名:用户自取昵称(nickname)为主,账号 ID 作副标题
+            UserAvatar(userId: f.userId, label: f.displayName, hasAvatar: f.hasAvatar, size: 44)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(f.handle)
+                    Text(f.displayName)
                     if f.initiator == "theirs" {
                         Text("TA 加你")
                             .font(.caption2)
@@ -176,10 +180,10 @@ struct ContactsTab: View {
     }
 
     private func friendMaskLine(_ f: FriendsAPI.Friend) -> String {
-        var parts: [String] = []
+        var parts: [String] = ["账号 \(f.handle)"]
         if let p = f.phoneMasked, !p.isEmpty { parts.append(p) }
         if let e = f.emailMasked, !e.isEmpty { parts.append(e) }
-        return parts.isEmpty ? "ID \(f.userId)" : parts.joined(separator: " · ")
+        return parts.joined(separator: " · ")
     }
 
     // MARK: - 数据
@@ -218,8 +222,10 @@ struct MeAccountView: View {
         List {
             Section {
                 HStack(spacing: 16) {
-                    ChatAvatar(label: appState.displayName)
-                        .frame(width: 56, height: 56)
+                    UserAvatar(userId: appState.userId ?? 0,
+                               label: appState.displayName,
+                               hasAvatar: appState.avatarUpdatedAt != nil,
+                               size: 56)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(appState.isLoggedIn ? appState.displayName : "未登录")
                             .font(.title3.weight(.semibold))
@@ -235,11 +241,11 @@ struct MeAccountView: View {
                     LabeledContent("登录状态", value: "已登录")
                     LabeledContent("设备身份", value: appState.identity?.deviceId ?? "—")
                 }
+                // ⚠️ 退出登录只保留「我的 → 账号与安全」里的那一个(用户明确要求全 App 仅一处)
                 Section {
-                    Button("退出登录", role: .destructive) {
-                        appState.logout()
-                        dismiss()
-                    }
+                    Text("退出登录请在「我的 → 账号与安全」中操作。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
         }

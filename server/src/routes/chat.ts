@@ -155,10 +155,13 @@ chatRouter.get('/rooms/:id/members', (req, res) => {
   if (!room) return res.status(404).json({ error: 'not_found' });
   // 仅创建者可见完整成员列表
   const isCreator = room.created_by === req.user!.id;
-  const rows = db.prepare('SELECT rm.user_id, u.handle, rm.joined_at FROM room_members rm JOIN users u ON u.id = rm.user_id WHERE rm.room_id=? ORDER BY rm.joined_at ASC').all(roomId) as { user_id: number; handle: string; joined_at: number }[];
+  const rows = db.prepare('SELECT rm.user_id, u.handle, u.nickname, u.avatar_mime, u.avatar_updated_at, rm.joined_at FROM room_members rm JOIN users u ON u.id = rm.user_id WHERE rm.room_id=? ORDER BY rm.joined_at ASC').all(roomId) as { user_id: number; handle: string; nickname: string | null; avatar_mime: string | null; avatar_updated_at: number | null; joined_at: number }[];
   const members = rows.map(r => ({
     userId: r.user_id,
     handle: isCreator ? r.handle : null,
+    nickname: isCreator ? (r.nickname ?? r.handle) : null,
+    hasAvatar: isCreator ? !!r.avatar_mime : false,
+    avatarUpdatedAt: isCreator ? r.avatar_updated_at : null,
     joinedAt: r.joined_at,
     isCreator: r.user_id === room.created_by
   }));

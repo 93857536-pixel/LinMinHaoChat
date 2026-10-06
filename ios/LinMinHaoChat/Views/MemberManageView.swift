@@ -77,11 +77,13 @@ struct MemberManageView: View {
     @ViewBuilder
     private func memberRow(member: MemberManageViewModel.MemberItem) -> some View {
         HStack(spacing: 12) {
-            ChatAvatar(label: member.handle ?? String(member.userId), isGroup: true)
-                .frame(width: 40, height: 40)
+            UserAvatar(userId: member.userId,
+                       label: member.displayName,
+                       hasAvatar: member.hasAvatar,
+                       size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(member.handle ?? "账号\(member.userId)")
+                    Text(member.displayName)
                         .font(.body)
                     if member.isCreator {
                         Text("创建者")
@@ -117,8 +119,11 @@ final class MemberManageViewModel: ObservableObject {
         let id: Int
         let userId: Int
         let handle: String?
+        let nickname: String?
+        let hasAvatar: Bool
         let joinedAt: Int64
         let isCreator: Bool
+        var displayName: String { (nickname?.isEmpty == false ? nickname! : (handle ?? "账号\(userId)")) }
     }
     
     @Published var members: [MemberItem] = []
@@ -133,7 +138,8 @@ final class MemberManageViewModel: ObservableObject {
             let result = try await ChatAPI.getMembers(roomId, token: token)
             isCreator = result.isCreator
             members = result.members.map { m in
-                MemberItem(id: m.userId, userId: m.userId, handle: m.handle, joinedAt: m.joinedAt, isCreator: m.isCreator)
+                MemberItem(id: m.userId, userId: m.userId, handle: m.handle, nickname: m.nickname,
+                           hasAvatar: m.hasAvatar == true, joinedAt: m.joinedAt, isCreator: m.isCreator)
             }
         } catch {
             print("[MemberManage] loadMembers error: \(error)")
@@ -201,10 +207,10 @@ struct AddMemberSheet: View {
                         dismiss()
                     } label: {
                         HStack(spacing: 12) {
-                            ChatAvatar(label: friend.handle, isGroup: false)
-                                .frame(width: 36, height: 36)
+                            UserAvatar(userId: friend.userId, label: friend.displayName,
+                                       hasAvatar: friend.hasAvatar, size: 36)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(friend.handle)
+                                Text(friend.displayName)
                                     .font(.body)
                                 if let phone = friend.phoneMasked {
                                     Text(phone)

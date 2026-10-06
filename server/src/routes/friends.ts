@@ -9,7 +9,8 @@ import { logger } from '../logger.js';
  * 好友系统(双向关注):
  * - friendships(user_id, friend_id) 存一条即双向可见(查询用 user_id IN (me, X) 去重)
  * - 加好友为即时互加(无"好友申请-同意"两步;产品定位:小范围可信圈,双方都是登录用户)
- * - 搜索返回脱敏信息(handle + 掩码号码),不返回明文手机号/邮箱
+ * - 搜索返回脱敏信息(handle + nickname + 掩码号码 + 头像版本),不返回明文手机号/邮箱
+ * - 头像本身不内联在 JSON 里,客户端按 userId 拉 /api/avatars/:userId(带 avatarUpdatedAt 作缓存版本)
  */
 export const friendsRouter = Router();
 
@@ -19,14 +20,16 @@ friendsRouter.use(authRequired);
 friendsRouter.get('/', (req, res) => {
   const me = req.user!.id;
   const rows = db.prepare(
-    `SELECT u.id, u.handle, u.phone_masked, u.email_masked, f.created_at,
+    `SELECT u.id, u.handle, u.nickname, u.avatar_mime, u.avatar_updated_at,
+            u.phone_masked, u.email_masked, f.created_at,
             CASE WHEN f.user_id = ? THEN 'mine' ELSE 'theirs' END AS initiator
      FROM friendships f
      JOIN users u ON u.id = (CASE WHEN f.user_id = ? THEN f.friend_id ELSE f.user_id END)
      WHERE (f.user_id = ? OR f.friend_id = ?) AND u.banned = 0
      ORDER BY f.created_at DESC`
   ).all(me, me, me, me) as {
-    id: number; handle: string | null; phone_masked: string | null; email_masked: string | null;
+    id: number; handle: string | null; nickname: string | null; avatar_mime: string | null;
+    avatar_updated_at: number | null; phone_masked: string | null; email_masked: string | null;
     created_at: number; initiator: string;
   }[];
   res.json({
@@ -34,6 +37,10 @@ friendsRouter.get('/', (req, res) => {
     friends: rows.map((r) => ({
       userId: r.id,
       handle: r.handle ?? `user_${r.id}`,
+      // 显示名 = 昵称(用户自取) → 账号 ID 兜底
+      nickname: r.nickname ?? r.handle ?? `user_${r.id}`,
+      hasAvatar: !!r.avatar_mime,
+      avatarUpdatedAt: r.avatar_updated_at,
       phoneMasked: r.phone_masked,
       emailMasked: r.email_masked,
       addedAt: r.created_at,
@@ -45,7 +52,7 @@ friendsRouter.get('/', (req, res) => {
 /**
  * 搜索用户(handle 模糊 / 掩码号码后缀):
  *  - query 全数字且长度 >= 4 → 按 phone_masked 后缀匹配(脱敏号末 4 位可搜)
- *  - 否则 → handle 模糊匹配
+ *  - 否则 → handle 或 nickname 模糊匹配(与客户端「搜索昵称或号码后 4 位」文案一致)
  * 返回脱敏信息,最多 20 条;排除自己
  */
 friendsRouter.get('/search', (req, res) => {
@@ -59,22 +66,26 @@ friendsRouter.get('/search', (req, res) => {
   const usePhone = /^\d{4,}$/.test(q);
   const rows = usePhone
     ? db.prepare(
-        `SELECT id, handle, phone_masked, email_masked FROM users
+        `SELECT id, handle, nickname, avatar_mime, avatar_updated_at, phone_masked, email_masked FROM users
          WHERE banned = 0 AND phone_masked LIKE ? ESCAPE '\\'
            ORDER BY created_at DESC LIMIT 20`
       ).all(`%${like}%`)
     : db.prepare(
-        `SELECT id, handle, phone_masked, email_masked FROM users
-         WHERE banned = 0 AND handle LIKE ? ESCAPE '\\'
+        `SELECT id, handle, nickname, avatar_mime, avatar_updated_at, phone_masked, email_masked FROM users
+         WHERE banned = 0 AND (handle LIKE ? ESCAPE '\\' OR nickname LIKE ? ESCAPE '\\')
            ORDER BY created_at DESC LIMIT 20`
-      ).all(`%${like}%`);
+      ).all(`%${like}%`, `%${like}%`);
 
   const me = req.user!.id;
   res.json({
     ok: true,
-    users: (rows as { id: number; handle: string | null; phone_masked: string | null; email_masked: string | null }[]).map((u) => ({
+    users: (rows as { id: number; handle: string | null; nickname: string | null; avatar_mime: string | null;
+                      avatar_updated_at: number | null; phone_masked: string | null; email_masked: string | null }[]).map((u) => ({
       userId: u.id,
       handle: u.handle ?? `user_${u.id}`,
+      nickname: u.nickname ?? u.handle ?? `user_${u.id}`,
+      hasAvatar: !!u.avatar_mime,
+      avatarUpdatedAt: u.avatar_updated_at,
       phoneMasked: u.phone_masked,
       emailMasked: u.email_masked,
       isFriend: !!db.prepare(

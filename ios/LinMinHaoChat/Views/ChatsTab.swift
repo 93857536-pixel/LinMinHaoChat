@@ -350,19 +350,21 @@ struct ChatsTab: View {
 struct ChatAvatar: View {
     let label: String
     var isGroup = false
+    /// 直径(默认 44;调用方需要更大/更小时传 size,而不是外面套 frame)
+    var size: CGFloat = 44
 
     var body: some View {
         ZStack {
             Circle()
                 .fill(isGroup ? AnyShapeStyle(Color.indigo.gradient) : AnyShapeStyle(Color.blue.gradient))
-                .frame(width: 44, height: 44)
+                .frame(width: size, height: size)
             if isGroup {
                 Image(systemName: "person.2.fill")
-                    .font(.system(size: 18))
+                    .font(.system(size: size * 0.41))
                     .foregroundStyle(.white)
             } else {
                 Text(String(label.prefix(1)).uppercased())
-                    .font(.title3.bold())
+                    .font(.system(size: size * 0.42, weight: .bold))
                     .foregroundStyle(.white)
             }
         }

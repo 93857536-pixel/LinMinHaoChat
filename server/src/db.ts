@@ -172,6 +172,17 @@ function migrate(): void {
     db.exec('ALTER TABLE users ADD COLUMN nickname TEXT');
     console.log('[db] migrated: users.nickname');
   }
+  // 头像(用户自主上传):只存文件 + mime + 更新时间,DB 不存字节
+  for (const def of [
+    'avatar_mime TEXT',
+    'avatar_updated_at INTEGER',
+  ]) {
+    const col = def.split(' ')[0];
+    if (!userCols.some((c) => c.name === col)) {
+      db.exec(`ALTER TABLE users ADD COLUMN ${def}`);
+      console.log(`[db] migrated: users.${col}`);
+    }
+  }
   // 实名认证:只存状态 + 掩码 + 不可逆指纹,绝不存明文身份证号
   for (const def of [
     'rn_status TEXT',

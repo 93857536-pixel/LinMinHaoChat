@@ -10,6 +10,7 @@ import { chatRouter } from './routes/chat.js';
 import { friendsRouter } from './routes/friends.js';
 import { pnsRouter } from './routes/pns.js';
 import { attachmentsRouter } from './routes/attachments.js';
+import { avatarsRouter } from './routes/avatars.js';
 import { adminRouter } from './routes/admin.js';
 import { backupRouter } from './routes/backup.js';
 import { diagRouter } from './routes/diag.js';
@@ -59,6 +60,9 @@ export function buildApp(): Express {
   app.use('/api/chat', chatRouter);
   app.use('/api/friends', friendsRouter);
   app.use('/api/attachments', attachmentsRouter);
+  // 用户头像(自主上传/好友可见)。刻意用 /api/avatars/* 独立前缀:
+  // 避免与 CF ingress 里 /api/logs* 等既有遮蔽规则相撞。
+  app.use('/api/avatars', avatarsRouter);
   app.use('/api/admin', adminRouter);
   // 备份:分块 body 上限 10MB(独立解析器,manifest 等小请求同样走这里)
   app.use('/api/backup', express.json({ limit: config.maxBackupChunkBytes }), backupRouter);

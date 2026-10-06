@@ -162,9 +162,10 @@ authRouter.post('/login', async (req, res) => {
  * GET /api/auth/me → { ok, user: { id, handle, nickname, createdAt } }
  */
 authRouter.get('/me', authRequired, (req, res) => {
-  const u = db.prepare('SELECT id, handle, nickname, created_at, banned, rn_status, rn_name_mask, rn_verified_at FROM users WHERE id=?').get(req.user!.id) as
+  const u = db.prepare('SELECT id, handle, nickname, created_at, banned, rn_status, rn_name_mask, rn_verified_at, avatar_mime, avatar_updated_at FROM users WHERE id=?').get(req.user!.id) as
     | { id: number; handle: string | null; nickname: string | null; created_at: number; banned: number;
-        rn_status: string | null; rn_name_mask: string | null; rn_verified_at: number | null }
+        rn_status: string | null; rn_name_mask: string | null; rn_verified_at: number | null;
+        avatar_mime: string | null; avatar_updated_at: number | null }
     | undefined;
   if (!u) return res.status(404).json({ error: 'not_found' });
   if (u.banned) return res.status(403).json({ error: 'banned' });
@@ -175,6 +176,9 @@ authRouter.get('/me', authRequired, (req, res) => {
       handle: u.handle,
       nickname: u.nickname ?? u.handle,
       createdAt: u.created_at,
+      // 头像:客户端用 avatarUpdatedAt 作缓存版本号(换头像即失效)
+      hasAvatar: !!u.avatar_mime,
+      avatarUpdatedAt: u.avatar_updated_at,
       // 实名认证状态(客户端据此显示徽标/入口)
       realnameStatus: u.rn_status ?? 'none',
       realnameVerified: u.rn_status === 'verified',

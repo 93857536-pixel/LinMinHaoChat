@@ -78,6 +78,14 @@ realnameRouter.post('/verify', async (req, res) => {
   const rlIp = rateLimit(`rn:ip:${ip}`, 20, 3600 * 1000);
   if (!rlIp.ok) return res.status(429).json({ error: 'rate_limited', retryAfterSec: rlIp.retryAfterSec });
 
+  // 一个账号只能实名一次:已认证账号不支持「重新核验」,也不支持换绑他人身份证。
+  // (产品决策,用户明确要求:实名一经绑定不可更改)此判断在调用上游之前 → 不消耗付费配额。
+  const already = db.prepare('SELECT rn_status FROM users WHERE id=?').get(uid) as { rn_status: string | null } | undefined;
+  if (already?.rn_status === 'verified') {
+    logger.info('realname_already_verified', { userId: uid });
+    return res.status(409).json({ error: 'already_verified' });
+  }
+
   const name = String(req.body?.name ?? '').trim();
   const idcard = String(req.body?.idcard ?? '').trim().toUpperCase();
 

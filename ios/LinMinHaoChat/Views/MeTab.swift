@@ -1,7 +1,12 @@
+import PhotosUI
 import SwiftUI
+import UIKit
 
 /// 我的 Tab —— 账号信息 + 隐私与安全 + 诊断支持 + 关于 + 登录/登出。
 /// 保留原有设置页(隐私模式强制、诊断日志上传、关于)全部功能,重组进"我的"。
+///
+/// ⚠️ 退出登录只保留一处:进入「账号与安全」(AccountDetail)后的那一个。
+/// 本页**不再**放置独立的「退出登录」区(用户明确要求:两个登出按钮只留里面的)。
 struct MeTab: View {
     @EnvironmentObject private var appState: AppState
     @State private var showLogin = false
@@ -10,6 +15,11 @@ struct MeTab: View {
     @State private var showNicknameEdit = false
     @State private var showRealName = false
     @State private var uploadStatus: UploadStatus = .idle
+    // 头像上传
+    @State private var avatarItem: PhotosPickerItem?
+    @State private var avatarBusy = false
+    @State private var avatarError: String?
+    @State private var showAvatarActions = false
 
     enum UploadStatus: Equatable {
         case idle, uploading, success, failed(String)
@@ -28,14 +38,40 @@ struct MeTab: View {
                 Section {
                     if appState.isLoggedIn {
                         HStack(spacing: 16) {
-                            ChatAvatar(label: appState.displayName)
-                                .frame(width: 56, height: 56)
+                            // 点头像直接换:相册选图 → 压方图 → 上传
+                            PhotosPicker(selection: $avatarItem, matching: .images, photoLibrary: .shared()) {
+                                ZStack {
+                                    UserAvatar(
+                                        userId: appState.userId ?? 0,
+                                        label: appState.displayName,
+                                        hasAvatar: appState.avatarUpdatedAt != nil,
+                                        size: 56
+                                    )
+                                    if avatarBusy {
+                                        Circle().fill(.black.opacity(0.35)).frame(width: 56, height: 56)
+                                        ProgressView().tint(.white)
+                                    }
+                                }
+                                .overlay(alignment: .bottomTrailing) {
+                                    Image(systemName: "camera.fill")
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(.white)
+                                        .padding(4)
+                                        .background(Color.accentColor, in: Circle())
+                                        .overlay(Circle().stroke(Color(.systemGroupedBackground), lineWidth: 2))
+                                        .offset(x: 2, y: 2)
+                                }
+                            }
+                            .buttonStyle(.plain)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(appState.displayName)
                                     .font(.title3.weight(.semibold))
                                 Text("账号 ID \(appState.userHandle ?? "—") · 已登录")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
+                                Text("点头像可更换")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
                             }
                         }
                         .padding(.vertical, 6)
@@ -80,6 +116,27 @@ struct MeTab: View {
                                     .foregroundStyle(.secondary)
                                 Image(systemName: "chevron.right")
                                     .font(.caption).foregroundStyle(.tertiary)
+                            }
+                        }
+                        PhotosPicker(selection: $avatarItem, matching: .images, photoLibrary: .shared()) {
+                            HStack(spacing: 12) {
+                                meIcon("photo.circle", .purple)
+                                Text(appState.avatarUpdatedAt == nil ? "上传头像" : "更换头像")
+                                Spacer()
+                                if avatarBusy { ProgressView().controlSize(.small) }
+                                Image(systemName: "chevron.right")
+                                    .font(.caption).foregroundStyle(.tertiary)
+                            }
+                        }
+                        if appState.avatarUpdatedAt != nil {
+                            Button {
+                                showAvatarActions = true
+                            } label: {
+                                HStack(spacing: 12) {
+                                    meIcon("trash", .red)
+                                    Text("移除头像").foregroundStyle(.red)
+                                    Spacer()
+                                }
                             }
                         }
                         Button {
@@ -191,14 +248,6 @@ struct MeTab: View {
                     }
                 }
 
-                if appState.isLoggedIn {
-                    Section {
-                        Button("退出登录", role: .destructive) {
-                            appState.logout()
-                        }
-                    }
-                }
-
                 Section("关于") {
                     LabeledContent("版本", value: appVersion)
                     LabeledContent("客户端", value: "原生 iOS(SwiftUI + CryptoKit)")
@@ -223,6 +272,53 @@ struct MeTab: View {
                 RealNameView()
                     .environmentObject(appState)
             }
+            .onChange(of: avatarItem) { _, item in
+                Task { await pickAvatar(item) }
+            }
+            .confirmationDialog("头像", isPresented: $showAvatarActions, titleVisibility: .visible) {
+                Button("移除头像", role: .destructive) { Task { await removeAvatar() } }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("移除后,好友与搜索结果中都显示默认头像。")
+            }
+            .alert("头像", isPresented: Binding(get: { avatarError != nil },
+                                              set: { if !$0 { avatarError = nil } })) {
+                Button("好", role: .cancel) { avatarError = nil }
+            } message: {
+                Text(avatarError ?? "")
+            }
+        }
+    }
+
+    // MARK: 头像上传(相册选图 → AvatarStore 压方图/上传)
+
+    @MainActor
+    private func pickAvatar(_ item: PhotosPickerItem?) async {
+        guard let item else { return }
+        avatarBusy = true
+        defer { avatarBusy = false; avatarItem = nil }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self),
+                  let img = UIImage(data: data) else {
+                avatarError = "无法读取所选图片,请换一张再试"
+                return
+            }
+            try await AvatarStore.shared.upload(img)
+        } catch {
+            if let e = error as? ApiError, e.status == 413 {
+                avatarError = "图片过大,请换一张"
+            } else {
+                avatarError = "上传失败:\(error.localizedDescription)"
+            }
+        }
+    }
+
+    @MainActor
+    private func removeAvatar() async {
+        do {
+            try await AvatarStore.shared.removeMyAvatar()
+        } catch {
+            avatarError = "移除失败:\(error.localizedDescription)"
         }
     }
 

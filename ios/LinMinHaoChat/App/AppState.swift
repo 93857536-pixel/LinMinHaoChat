@@ -19,6 +19,8 @@ final class AppState: ObservableObject {
     @Published var userNickname: String?
     /// 注册时间(毫秒)
     @Published var userCreatedAt: Int64?
+    /// 我的头像版本号(服务端 avatarUpdatedAt;nil = 没有头像)
+    @Published var avatarUpdatedAt: Int64?
 
     // MARK: 实名认证状态(none/verified/mismatch/no_record)
     @Published var realnameStatus: String = "none"
@@ -55,6 +57,7 @@ final class AppState: ObservableObject {
         static let handle = "lmh.auth.handle"
         static let nickname = "lmh.auth.nickname"
         static let createdAt = "lmh.auth.createdAt"
+        static let avatarUpdatedAt = "lmh.auth.avatarUpdatedAt"
         static let rnStatus = "lmh.auth.rnStatus"
         static let rnVerified = "lmh.auth.rnVerified"
         static let rnNameMasked = "lmh.auth.rnNameMasked"
@@ -80,6 +83,9 @@ final class AppState: ObservableObject {
         userNickname = d.string(forKey: ProfileKeys.nickname)
         if d.object(forKey: ProfileKeys.createdAt) != nil {
             userCreatedAt = d.object(forKey: ProfileKeys.createdAt) as? Int64
+        }
+        if d.object(forKey: ProfileKeys.avatarUpdatedAt) != nil {
+            avatarUpdatedAt = d.object(forKey: ProfileKeys.avatarUpdatedAt) as? Int64
         }
         // 实名状态(先本地显示,随后 refreshProfile 与服务端对齐)
         realnameStatus = d.string(forKey: ProfileKeys.rnStatus) ?? "none"
@@ -148,6 +154,8 @@ final class AppState: ObservableObject {
                     let handle: String?
                     let nickname: String?
                     let createdAt: Int64?
+                    let hasAvatar: Bool?
+                    let avatarUpdatedAt: Int64?
                     let realnameStatus: String?
                     let realnameVerified: Bool?
                     let realnameNameMasked: String?
@@ -166,6 +174,7 @@ final class AppState: ObservableObject {
             if let h = me.user.handle { d.set(h, forKey: ProfileKeys.handle) }
             if let n = userNickname { d.set(n, forKey: ProfileKeys.nickname) }
             if let ts = me.user.createdAt { d.set(ts, forKey: ProfileKeys.createdAt) }
+            applyAvatar(updatedAt: me.user.hasAvatar == true ? me.user.avatarUpdatedAt : nil)
             // 实名状态以服务端为准
             applyRealname(status: me.user.realnameStatus ?? "none",
                           verified: me.user.realnameVerified ?? false,
@@ -190,6 +199,14 @@ final class AppState: ObservableObject {
         if let verifiedAt { d.set(verifiedAt, forKey: ProfileKeys.rnVerifiedAt) } else { d.removeObject(forKey: ProfileKeys.rnVerifiedAt) }
     }
 
+    /// 应用头像版本号(上传成功 / 拉取资料 / 删除头像时调用),并持久化
+    func applyAvatar(updatedAt: Int64?) {
+        avatarUpdatedAt = updatedAt
+        let d = UserDefaults.standard
+        if let updatedAt { d.set(updatedAt, forKey: ProfileKeys.avatarUpdatedAt) }
+        else { d.removeObject(forKey: ProfileKeys.avatarUpdatedAt) }
+    }
+
     func logout() {
         authToken = nil
         sessionId = nil
@@ -197,6 +214,7 @@ final class AppState: ObservableObject {
         userHandle = nil
         userNickname = nil
         userCreatedAt = nil
+        avatarUpdatedAt = nil
         realnameStatus = "none"
         realnameVerified = false
         realnameNameMasked = nil
@@ -206,6 +224,7 @@ final class AppState: ObservableObject {
         KeychainStore.delete(account: "lmh.auth.session")
         let d = UserDefaults.standard
         [ProfileKeys.userId, ProfileKeys.handle, ProfileKeys.nickname, ProfileKeys.createdAt,
+         ProfileKeys.avatarUpdatedAt,
          ProfileKeys.rnStatus, ProfileKeys.rnVerified, ProfileKeys.rnNameMasked, ProfileKeys.rnVerifiedAt]
             .forEach { d.removeObject(forKey: $0) }
     }

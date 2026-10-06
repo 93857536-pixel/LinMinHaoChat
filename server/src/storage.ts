@@ -20,6 +20,7 @@ import { logger } from './logger.js';
 export class CipherStore {
   readonly messagesDir: string;
   readonly attachmentsDir: string;
+  readonly avatarsDir: string;
   readonly usersDir: string;
   readonly sessionsDir: string;
   readonly backupsDir: string;
@@ -29,11 +30,12 @@ export class CipherStore {
     const root = config.dataRoot;
     this.messagesDir = path.join(root, 'messages');
     this.attachmentsDir = path.join(root, 'attachments');
+    this.avatarsDir = path.join(root, 'avatars');
     this.usersDir = path.join(root, 'users');
     this.sessionsDir = path.join(root, 'sessions');
     this.backupsDir = path.join(root, 'backups');
     this.configDir = path.join(root, 'config');
-    for (const d of [root, this.messagesDir, this.attachmentsDir, this.usersDir, this.sessionsDir, this.backupsDir, this.configDir, path.join(root, 'logs')]) {
+    for (const d of [root, this.messagesDir, this.attachmentsDir, this.avatarsDir, this.usersDir, this.sessionsDir, this.backupsDir, this.configDir, path.join(root, 'logs')]) {
       fs.mkdirSync(d, { recursive: true, mode: 0o700 });
     }
   }
@@ -84,6 +86,42 @@ export class CipherStore {
     const root = path.resolve(config.dataRoot);
     if (!abs.startsWith(root + path.sep)) return;
     try { fs.unlinkSync(abs); logger.info('cipher deleted', { relPath }); } catch { /* ignore */ }
+  }
+
+  /**
+   * 头像(用户自主上传的明文图片,非密文):
+   *   <dataRoot>/avatars/<userId>.<ext>   —— 每个用户至多一份,换头像即覆盖
+   * 只允许 dataRoot/avatars 内、纯数字 userId + 白名单扩展名,杜绝路径遍历。
+   */
+  saveAvatar(userId: number, ext: string, payload: Buffer): string {
+    const safeId = String(userId).replace(/[^0-9]/g, '');
+    const safeExt = ['jpg', 'png', 'webp'].includes(ext) ? ext : 'jpg';
+    // 换头像:先清掉该用户其它扩展名的旧文件,避免残留
+    for (const e of ['jpg', 'png', 'webp']) {
+      if (e === safeExt) continue;
+      try { fs.unlinkSync(path.join(this.avatarsDir, `${safeId}.${e}`)); } catch { /* ignore */ }
+    }
+    const file = path.join(this.avatarsDir, `${safeId}.${safeExt}`);
+    fs.writeFileSync(file, payload, { mode: 0o600 });
+    return `avatars/${safeId}.${safeExt}`;
+  }
+
+  readAvatar(relPath: string): Buffer | null {
+    const normalized = path.normalize(relPath).replace(/\\/g, '/');
+    if (!/^avatars\/[0-9]+\.(jpg|png|webp)$/.test(normalized)) return null;
+    const abs = path.join(config.dataRoot, normalized);
+    const root = path.resolve(config.dataRoot);
+    if (!abs.startsWith(root + path.sep)) return null;
+    try { return fs.readFileSync(abs); } catch { return null; }
+  }
+
+  deleteAvatar(relPath: string): void {
+    const normalized = path.normalize(relPath).replace(/\\/g, '/');
+    if (!/^avatars\/[0-9]+\.(jpg|png|webp)$/.test(normalized)) return;
+    const abs = path.join(config.dataRoot, normalized);
+    const root = path.resolve(config.dataRoot);
+    if (!abs.startsWith(root + path.sep)) return;
+    try { fs.unlinkSync(abs); } catch { /* ignore */ }
   }
 
   diskUsageBytes(): { messages: number; attachments: number; total: number } {

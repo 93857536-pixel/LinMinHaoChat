@@ -110,6 +110,9 @@ enum AuthAPI {
             let handle: String?
             let nickname: String?
             let createdAt: Int64?
+            /// 头像(用户自主上传):客户端按 userId 拉 /avatars/:userId,用 avatarUpdatedAt 作缓存版本
+            let hasAvatar: Bool?
+            let avatarUpdatedAt: Int64?
             // 实名认证状态
             let realnameStatus: String?
             let realnameVerified: Bool?
@@ -395,8 +398,12 @@ enum ChatAPI {
     struct MemberInfo: Decodable {
         let userId: Int
         let handle: String?
+        let nickname: String?
+        let hasAvatar: Bool?
+        let avatarUpdatedAt: Int64?
         let joinedAt: Int64
         let isCreator: Bool
+        var displayName: String { (nickname?.isEmpty == false ? nickname! : (handle ?? "账号\(userId)")) }
     }
     struct MembersResult: Decodable {
         let ok: Bool
@@ -518,20 +525,30 @@ enum FriendsAPI {
     struct Friend: Decodable, Identifiable, Hashable {
         let userId: Int
         let handle: String
+        /// 显示名(用户自取的昵称,缺省 = 账号 ID)
+        let nickname: String?
+        let hasAvatar: Bool?
+        let avatarUpdatedAt: Int64?
         let phoneMasked: String?
         let emailMasked: String?
         let addedAt: Int64
         let initiator: String   // "mine" | "theirs"
         var id: Int { userId }
+        /// 展示用名称:昵称 → 账号 ID
+        var displayName: String { (nickname?.isEmpty == false ? nickname! : handle) }
     }
 
     struct SearchUser: Decodable, Identifiable, Hashable {
         let userId: Int
         let handle: String
+        let nickname: String?
+        let hasAvatar: Bool?
+        let avatarUpdatedAt: Int64?
         let phoneMasked: String?
         let emailMasked: String?
         var isFriend: Bool   // var:搜索后本地乐观更新(添加成功即翻 true)
         var id: Int { userId }
+        var displayName: String { (nickname?.isEmpty == false ? nickname! : handle) }
     }
 
     struct FriendsResult: Decodable {
@@ -593,6 +610,36 @@ enum AttachmentAPI {
 
 // 服务器成功但不返回 body 的响应
 struct Empty: Decodable {}
+
+// MARK: - 用户头像(与 server/src/routes/avatars.ts 对齐)
+
+enum AvatarAPI {
+    struct UploadResult: Decodable {
+        let ok: Bool
+        let hasAvatar: Bool?
+        let avatarUpdatedAt: Int64?
+        let size: Int?
+    }
+
+    /// 上传/更换我的头像(JPEG 原始字节;iOS 端已压到 512px 方图并剔除 EXIF)
+    static func upload(jpeg: Data, token: String) async throws -> UploadResult {
+        let bytes = try await APIClient.requestData(
+            "/avatars", method: "POST", bodyData: jpeg,
+            contentType: "image/jpeg", token: token
+        )
+        return try JSONDecoder().decode(UploadResult.self, from: bytes)
+    }
+
+    /// 删除我的头像
+    static func delete(token: String) async throws {
+        let _: Empty = try await APIClient.request("/avatars", method: "DELETE", token: token)
+    }
+
+    /// 拉取某个用户的头像字节(仅本人/好友/同会话成员可见;无头像或无权访问 → 404)
+    static func download(userId: Int, token: String) async throws -> Data {
+        try await APIClient.requestData("/avatars/\(userId)", method: "GET", token: token)
+    }
+}
 
 // MARK: - 收藏消息
 struct StarredMsg: Decodable, Identifiable {

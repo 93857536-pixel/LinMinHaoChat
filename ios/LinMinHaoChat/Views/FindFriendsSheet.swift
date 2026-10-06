@@ -56,9 +56,9 @@ struct FindFriendsSheet: View {
                 if !results.isEmpty {
                     List(results) { u in
                         HStack(spacing: 12) {
-                            ChatAvatar(label: u.handle, isGroup: false)
+                            UserAvatar(userId: u.userId, label: u.displayName, hasAvatar: u.hasAvatar, size: 44)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(u.handle)
+                                Text(u.displayName)
                                 Text(displayMask(u))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -107,9 +107,8 @@ struct FindFriendsSheet: View {
     }
 
     private func displayMask(_ u: FriendsAPI.SearchUser) -> String {
-        var parts: [String] = []
+        var parts: [String] = ["账号 \(u.handle)"]
         if let p = u.phoneMasked, !p.isEmpty { parts.append(p) }
-        parts.append("ID \(u.userId)")
         return parts.joined(separator: " · ")
     }
 

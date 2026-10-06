@@ -2,6 +2,10 @@ import SwiftUI
 
 /// 实名认证:姓名 + 身份证号 二要素核验
 ///
+/// 产品规则(用户明确要求):一个账号只能实名一次 —— **不提供「重新核验」,也不支持换绑**。
+/// 已认证账号:此页只展示认证结果,不再出现任何表单入口;服务端同样拒绝二次提交
+/// (POST /realname/verify → 409 already_verified),客户端隐藏只是第一层。
+///
 /// 安全说明(客户端侧):
 /// - AppCode 只在服务端,客户端不持有任何核验服务凭证
 /// - 身份证号仅随请求发送一次,**不落本地存储**;服务端也只保存掩码与不可逆指纹
@@ -29,6 +33,7 @@ struct RealNameView: View {
         NavigationStack {
             Form {
                 if appState.realnameVerified {
+                    // 已认证:只读展示。刻意不渲染任何输入框/提交按钮(无「重新核验」入口)。
                     Section {
                         HStack(spacing: 12) {
                             Image(systemName: "checkmark.seal.fill")
@@ -49,68 +54,72 @@ struct RealNameView: View {
                                 }
                             }
                         }
-                    }
-                }
-
-                if checkingService {
-                    Section { HStack { ProgressView(); Text("检查服务状态…").foregroundStyle(.secondary) } }
-                } else if !serviceEnabled {
-                    Section {
-                        Label("实名认证服务未开通", systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.orange)
+                    } header: {
+                        Text("实名状态")
+                    } footer: {
+                        Text("实名信息一经通过即与本账号绑定,不可修改、不支持重新核验或换绑其他身份证。如果姓名/证件信息有误,请联系管理员处理。")
                     }
                 } else {
-                    Section {
-                        TextField("真实姓名", text: $name)
-                            .textContentType(.name)
-                            .autocorrectionDisabled()
-                        TextField("身份证号(18 位)", text: $idcard)
-                            .keyboardType(.asciiCapable)
-                            .textInputAutocapitalization(.characters)
-                            .autocorrectionDisabled()
-                            .onChange(of: idcard) { _, v in
-                                // 限制为数字与 X,最长 18 位
-                                let filtered = String(v.uppercased().filter { $0.isNumber || $0 == "X" }.prefix(18))
-                                if filtered != v { idcard = filtered }
-                            }
-                    } header: {
-                        Text(appState.realnameVerified ? "重新核验" : "填写真实身份信息")
-                    } footer: {
-                        Text("将与权威数据源比对「姓名 + 身份证号」是否一致。身份证号仅用于本次核验,不会明文保存。")
-                    }
-
-                    Section {
-                        Button {
-                            Task { await submit() }
-                        } label: {
-                            HStack {
-                                Spacer()
-                                if submitting { ProgressView().padding(.trailing, 6) }
-                                Text(submitting ? "核验中…" : "提交核验").bold()
-                                Spacer()
-                            }
-                        }
-                        .disabled(!canSubmit)
-                    }
-
-                    if !trimmedId.isEmpty && trimmedId.count == 18 && !Self.isValidIdCard(trimmedId) {
+                    if checkingService {
+                        Section { HStack { ProgressView(); Text("检查服务状态…").foregroundStyle(.secondary) } }
+                    } else if !serviceEnabled {
                         Section {
-                            Label("身份证号校验位不正确,请检查是否输错", systemImage: "exclamationmark.circle")
-                                .font(.footnote)
+                            Label("实名认证服务未开通", systemImage: "exclamationmark.triangle")
                                 .foregroundStyle(.orange)
                         }
-                    }
-                }
+                    } else {
+                        Section {
+                            TextField("真实姓名", text: $name)
+                                .textContentType(.name)
+                                .autocorrectionDisabled()
+                            TextField("身份证号(18 位)", text: $idcard)
+                                .keyboardType(.asciiCapable)
+                                .textInputAutocapitalization(.characters)
+                                .autocorrectionDisabled()
+                                .onChange(of: idcard) { _, v in
+                                    // 限制为数字与 X,最长 18 位
+                                    let filtered = String(v.uppercased().filter { $0.isNumber || $0 == "X" }.prefix(18))
+                                    if filtered != v { idcard = filtered }
+                                }
+                        } header: {
+                            Text("填写真实身份信息")
+                        } footer: {
+                            Text("将与权威数据源比对「姓名 + 身份证号」是否一致。身份证号仅用于本次核验,不会明文保存。\n每个账号只能实名一次,提交通过后不可修改、不可换绑。")
+                        }
 
-                if let resultTitle {
-                    Section {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: resultIsError ? "xmark.circle.fill" : "info.circle.fill")
-                                .foregroundStyle(resultIsError ? .red : .green)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(resultTitle).font(.subheadline.weight(.semibold))
-                                if let resultDetail {
-                                    Text(resultDetail).font(.footnote).foregroundStyle(.secondary)
+                        Section {
+                            Button {
+                                Task { await submit() }
+                            } label: {
+                                HStack {
+                                    Spacer()
+                                    if submitting { ProgressView().padding(.trailing, 6) }
+                                    Text(submitting ? "核验中…" : "提交核验").bold()
+                                    Spacer()
+                                }
+                            }
+                            .disabled(!canSubmit)
+                        }
+
+                        if !trimmedId.isEmpty && trimmedId.count == 18 && !Self.isValidIdCard(trimmedId) {
+                            Section {
+                                Label("身份证号校验位不正确,请检查是否输错", systemImage: "exclamationmark.circle")
+                                    .font(.footnote)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
+
+                    if let resultTitle {
+                        Section {
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: resultIsError ? "xmark.circle.fill" : "info.circle.fill")
+                                    .foregroundStyle(resultIsError ? .red : .green)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(resultTitle).font(.subheadline.weight(.semibold))
+                                    if let resultDetail {
+                                        Text(resultDetail).font(.footnote).foregroundStyle(.secondary)
+                                    }
                                 }
                             }
                         }
@@ -232,6 +241,7 @@ struct RealNameView: View {
         case "vendor_disabled": return "核验服务已停用"
         case "realname_unavailable": return "实名认证服务未开通"
         case "idcard_already_bound": return "该身份证已绑定其他账号(一个身份证只能认证一个账号)"
+        case "already_verified": return "本账号已完成实名认证,不支持重新核验或换绑"
         default: return raw
         }
     }
