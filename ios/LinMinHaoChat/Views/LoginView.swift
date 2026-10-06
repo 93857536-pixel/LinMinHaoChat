@@ -5,6 +5,7 @@ import SwiftUI
 /// 自定义卡片式布局(不用 Form):输入行之间用清晰的 Divider 分隔,深浅色模式都可见。
 struct LoginView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
 
     @State private var target = ""          // 手机号或邮箱
     @State private var code = ""
@@ -343,6 +344,11 @@ struct LoginView: View {
                 appState.saveAuth(token: r.token, sessionId: r.sessionId,
                                   userId: r.user.id, handle: r.user.handle)
                 statusMessage = "一键登录成功 ✓"
+                // 成功后 1.5s 展示提示,再自动退回上一页(首页),免去手动返回
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    dismiss()
+                }
             } catch {
                 if let e = error as? ApiError, e.status == 429 {
                     errorMessage = "请求过于频繁,请稍后再试"
