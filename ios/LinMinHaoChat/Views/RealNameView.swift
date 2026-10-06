@@ -231,6 +231,7 @@ struct RealNameView: View {
         case "vendor_quota": return "核验服务额度不足,请联系管理员"
         case "vendor_disabled": return "核验服务已停用"
         case "realname_unavailable": return "实名认证服务未开通"
+        case "idcard_already_bound": return "该身份证已绑定其他账号(一个身份证只能认证一个账号)"
         default: return raw
         }
     }

@@ -186,6 +186,15 @@ function migrate(): void {
       console.log(`[db] migrated: users.${col}`);
     }
   }
+  // 一人一证:同一身份证只能绑定一个账号 —— 仅对已认证(rn_hash 非空)加【部分唯一索引】。
+  // ⚠️ 若历史库已有重复指纹,建索引会失败:这里兜住并告警,绝不让服务起不来。
+  try {
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_rn_hash_uniq
+             ON users(rn_hash) WHERE rn_hash IS NOT NULL`);
+    console.log('[db] ensured: users.rn_hash 部分唯一索引(一人一证)');
+  } catch (e) {
+    console.error('[db] ⚠️ rn_hash 唯一索引创建失败(疑似已有重复实名指纹):', (e as Error).message);
+  }
   // 云端 E2EE 备份文件表
   db.exec(`
 CREATE TABLE IF NOT EXISTS backup_files (

@@ -85,6 +85,18 @@ realnameRouter.post('/verify', async (req, res) => {
   if (!isValidRealName(name)) return res.status(400).json({ error: 'bad_name' });
   if (!isValidIdCard(idcard)) return res.status(400).json({ error: 'bad_idcard' });
 
+  // 一人一证:同一身份证只能绑定一个账号。
+  // 用指纹在【调用上游之前】判重 → 省付费配额。代价是「某证是否已注册」可被探测,
+  // 但探测需先持完整身份证号,且受上面三层限流约束(每日默认 5 次)。
+  const fp = idCardFingerprint(idcard, config.otpPepper);
+  const boundByOther = db
+    .prepare("SELECT id FROM users WHERE rn_hash=? AND rn_status='verified' AND id<>?")
+    .get(fp, uid) as { id: number } | undefined;
+  if (boundByOther) {
+    logger.warn('realname_already_bound', { userId: uid });
+    return res.status(409).json({ error: 'idcard_already_bound' });
+  }
+
   let payload: any = null;
   try {
     const url = `${VENDOR_URL}?name=${encodeURIComponent(name)}&idcard=${encodeURIComponent(idcard)}`;
@@ -119,16 +131,20 @@ realnameRouter.post('/verify', async (req, res) => {
   if (result === 0) {
     // 二要素一致 → 通过
     const now = Date.now();
-    db.prepare(
-      `UPDATE users SET rn_status='verified', rn_name_mask=?, rn_idcard_mask=?, rn_hash=?, rn_verified_at=?
-       WHERE id=?`
-    ).run(
-      maskRealName(name),
-      maskIdCard(idcard),
-      idCardFingerprint(idcard, config.otpPepper),
-      now,
-      uid
-    );
+    try {
+      db.prepare(
+        `UPDATE users SET rn_status='verified', rn_name_mask=?, rn_idcard_mask=?, rn_hash=?, rn_verified_at=?
+         WHERE id=?`
+      ).run(maskRealName(name), maskIdCard(idcard), fp, now, uid);
+    } catch (e) {
+      // 并发下同一身份证同时绑定两个账号 → 被部分唯一索引拦下
+      const msg = String((e as Error)?.message || '');
+      if (/UNIQUE|constraint/i.test(msg)) {
+        logger.warn('realname_bound_race', { userId: uid });
+        return res.status(409).json({ error: 'idcard_already_bound' });
+      }
+      throw e;
+    }
     logger.info('realname_verified', { userId: uid });
     return res.json({ ok: true, ...statusPayload(uid) });
   }
