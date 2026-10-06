@@ -13,6 +13,7 @@
 //  避免 SDK 回调不触发时 withCheckedContinuation 永久挂起(表现为点按钮永久转圈)。
 //
 
+import Foundation
 import UIKit
 import os
 
@@ -51,12 +52,34 @@ final class PNSAuthManager {
     static let maxLogBufferSize = 500
 
     private func pnsLog(_ msg: String) {
-        pnsLogger.info("\(msg, privacy: .public)")
+        // 统一脱敏后再落日志:无论哪里误打 token 都不会明文进缓冲区/设备日志/上传
+        let safe = Self.redact(msg)
+        pnsLogger.info("\(safe, privacy: .public)")
         // 同时存入内存缓冲区用于上传
-        logBuffer.append("[\(Date().ISO8601Format())] \(msg)")
+        logBuffer.append("[\(Date().ISO8601Format())] \(safe)")
         if logBuffer.count > PNSAuthManager.maxLogBufferSize {
             logBuffer.removeFirst(logBuffer.count - PNSAuthManager.maxLogBufferSize)
         }
+    }
+
+    /// 日志脱敏:凭证类字面量一律掩码(用户 2026-10-06 反馈「登录日志里 token 是明文」)
+    /// 覆盖 ① key=value / key: value 形式(token/wsToken/accessToken/spToken/Authorization)
+    ///      ② JWT 三段式 ③ 任意 ≥32 位的 base64/hex 长串兜底
+    static func redact(_ msg: String) -> String {
+        var s = msg
+        let rules: [(String, String)] = [
+            ("(?i)((?:ws|access|sp|refresh|id)?token|authorization)[\"']?\\s*[=:]\\s*\"?Bearer\\s+[A-Za-z0-9_\\-\\.]+", "$1=***"),
+            ("(?i)((?:ws|access|sp|refresh|id)?token|authorization)[\"']?\\s*[=:]\\s*\"?[A-Za-z0-9_\\-\\.]{6,}", "$1=***"),
+            ("eyJ[A-Za-z0-9_\\-]{6,}\\.[A-Za-z0-9_\\-]{6,}\\.[A-Za-z0-9_\\-]{4,}", "***JWT***"),
+            ("[A-Za-z0-9+/_\\-]{32,}", "***"),
+        ]
+        for (pattern, template) in rules {
+            guard let re = try? NSRegularExpression(pattern: pattern) else { continue }
+            s = re.stringByReplacingMatches(in: s,
+                                            range: NSRange(s.startIndex..., in: s),
+                                            withTemplate: template)
+        }
+        return s
     }
 
     /// 获取日志内容供上传使用
@@ -68,7 +91,7 @@ final class PNSAuthManager {
         ===================================
 
         """
-        return header + logBuffer.joined(separator: "\n")
+        return header + Self.redact(logBuffer.joined(separator: "\n"))
     }
 
     /// 检测是否为网络连接丢失错误
@@ -216,11 +239,13 @@ final class PNSAuthManager {
                 guardTimeout.cancel()
                 let dict = result as? [String: Any] ?? [:]
                 let code = (dict["resultCode"] as? String) ?? ""
-                self?.pnsLog("[PNS] getLoginToken 回调 resultCode=\(code) dict=\(String(describing: dict))")
+                // 脱敏: 只记 resultCode 与字段数量,不落 dict 全文(原文含完整 spToken)
+                self?.pnsLog("[PNS] getLoginToken 回调 resultCode=\(code) keys=\(dict.count)")
                 switch code {
                 case PNSCodeSuccess:
                     let token = (dict["token"] as? String) ?? ""
-                    self?.pnsLog("[PNS] 获取 token 成功 token=\(token.isEmpty ? "空!" : "\(token.prefix(10))...")")
+                    // 只记长度,不记内容(前 N 位+总长度仍然暴露模式特征,只记长度最安全)
+                    self?.pnsLog("[PNS] 获取 token 成功 token 长度=\(token.count)")
                     if token.isEmpty {
                         completeOnce(.failed(reason: "获取授权令牌失败,请重试"))
                     } else {
