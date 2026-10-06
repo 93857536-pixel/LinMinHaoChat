@@ -119,24 +119,38 @@ inviteRouter.post('/:id/join', async (req, res) => {
   if (Date.now() > inv.expires_at) return res.status(403).json({ error: 'code_expired' });
 
   // 验证码校验(恒定时间比较;防爆破)
+  // 如果有有效JWT,则跳过验证码检查(账号模式直接入)
   const code = String((req.body || {}).code || '');
-  if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: 'bad_code' });
-  if (inv.attempts >= config.inviteMaxAttempts) {
-    return res.status(429).json({ error: 'too_many_attempts', retryAfterSec: 3600 });
+  let skippedCodeCheck = false;
+  const token = String((req.body || {}).token || '');
+  if (token) {
+    try {
+      const enc = new TextEncoder();
+      const { payload } = await jwtVerify(token, enc.encode(config.jwtSecret));
+      if (payload.role === 'user') {
+        skippedCodeCheck = true;
+      }
+    } catch { /* 无效token则继续走验证码流程 */ }
   }
-  const a = Buffer.from(otpHmac(code), 'hex');
-  const b = Buffer.from(inv.code_hash, 'hex');
-  const match = a.length === b.length && crypto.timingSafeEqual(a, b);
-  if (!match) {
-    db.prepare('UPDATE invite_rooms SET attempts=attempts+1 WHERE id=?').run(inv.id);
-    return res.status(401).json({ error: 'invalid_code' });
+
+  if (!skippedCodeCheck) {
+    if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: 'bad_code' });
+    if (inv.attempts >= config.inviteMaxAttempts) {
+      return res.status(429).json({ error: 'too_many_attempts', retryAfterSec: 3600 });
+    }
+    const a = Buffer.from(otpHmac(code), 'hex');
+    const b = Buffer.from(inv.code_hash, 'hex');
+    const match = a.length === b.length && crypto.timingSafeEqual(a, b);
+    if (!match) {
+      db.prepare('UPDATE invite_rooms SET attempts=attempts+1 WHERE id=?').run(inv.id);
+      return res.status(401).json({ error: 'invalid_code' });
+    }
+    db.prepare('UPDATE invite_rooms SET attempts=0 WHERE id=?').run(inv.id);
   }
-  db.prepare('UPDATE invite_rooms SET attempts=0 WHERE id=?').run(inv.id);
 
   // 身份:可选 JWT → 账号身份;否则游客
   let userId: number | null = null;
   let displayName = '';
-  const token = String((req.body || {}).token || '');
   if (token) {
     // 手动验证 JWT(账号身份进入)
     try {

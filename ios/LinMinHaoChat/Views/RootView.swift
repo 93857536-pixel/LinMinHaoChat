@@ -44,7 +44,7 @@ struct RootView: View {
         }
         .tint(.blue)
         .fullScreenCover(item: $activeInvite) { req in
-            InviteChatView(inviteId: req.inviteId, sessionKeyB64url: req.sessionKeyB64url)
+            InviteChatView(inviteId: req.inviteId, sessionKeyB64url: req.sessionKeyB64url, accountMode: req.accountMode)
                 .environmentObject(appState)
                 .onDisappear { activeInvite = nil }
         }

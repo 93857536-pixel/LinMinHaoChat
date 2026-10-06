@@ -25,6 +25,7 @@ final class InviteChatViewModel: ObservableObject {
     let inviteId: String
     private let sessionKey: SymmetricKey?
     private let accountToken: String?
+    private let accountMode: Bool
     private var roomId: String?
     private var anonId: String?
     private var wsToken: String?
@@ -35,9 +36,10 @@ final class InviteChatViewModel: ObservableObject {
 
     private let ws = WebSocketClient()
 
-    init(inviteId: String, sessionKeyB64url: String?, accountToken: String? = nil) {
+    init(inviteId: String, sessionKeyB64url: String?, accountToken: String? = nil, accountMode: Bool = false) {
         self.inviteId = inviteId
         self.accountToken = accountToken
+        self.accountMode = accountMode
         self.sessionKey = sessionKeyB64url.flatMap(SessionKeyUtil.fromB64url)
         // 身份复用:本房间已分配的 anonId 持久化,重连/重进不漂移
         // (roomId 未知时用 inviteId 兜底;加入后 roomId 确定再覆盖)
@@ -54,7 +56,18 @@ final class InviteChatViewModel: ObservableObject {
         ws.onAuthExpired = { [weak self] in
             Task { @MainActor in self?.refreshWsToken() }
         }
-        await verify()
+        // 断点续进:已有持久化 token 则自动重 join
+        let persistedCode = UserDefaults.standard.string(forKey: "lmh.invite.code.\(inviteId)")
+        let persistedKey = UserDefaults.standard.string(forKey: "lmh.invite.key.\(roomId ?? "")")
+        if let persistedCode, !persistedCode.isEmpty, let key = persistedKey.flatMap({ SessionKeyUtil.fromB64url($0) }), roomId != nil {
+            await join(code: persistedCode, autoJoin: true)
+        } else {
+            await verify()
+            // 账号模式深链且已有 JWT → 直接提交
+            if accountMode && accountToken != nil {
+                await joinAsAccount(key: sessionKey!)
+            }
+        }
     }
 
     func leave() {
@@ -86,13 +99,18 @@ final class InviteChatViewModel: ObservableObject {
     }
 
     // MARK: - 验证码 + 加入
-    func join(code: String) async {
+    func join(code: String, autoJoin: Bool = false) async {
         guard let key = sessionKey else {
             errorMessage = "缺少会话密钥"
             return
         }
         status = .loading
         do {
+            // 账号模式下 JWT 已包含身份,无需验证码
+            if autoJoin && accountToken != nil {
+                await joinAsAccount(key: key)
+                return
+            }
             // 携带持久化 anonId(防重连刷新变新访客)+ 可选账号 token
             let persistedAnon: String? = roomId.flatMap { UserDefaults.standard.string(forKey: "anon:\($0)") }
             let j: InviteAPI.JoinResult = try await InviteAPI.join(inviteId, code: code,
@@ -119,6 +137,46 @@ final class InviteChatViewModel: ObservableObject {
             errorMessage = "验证码错误,请重试"
         } catch let e as ApiError where e.status == 429 {
             errorMessage = "尝试次数过多,请稍后再试"
+        } catch {
+            errorMessage = "加入失败:\(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - 账号模式自动加入
+    private func joinAsAccount(key: SymmetricKey) async {
+        do {
+            // 先验证邀请信息
+            let info: InviteAPI.InfoResult = try await InviteAPI.info(inviteId)
+            guard info.ok, info.roomKind == "invite" else {
+                status = .error("邀请无效")
+                return
+            }
+            if info.codeExpired || info.roomExpired || info.roomStatus != "active" {
+                status = .error("邀请已过期")
+                return
+            }
+
+            // 使用账号身份加入(无需验证码)
+            let j: InviteAPI.JoinResult = try await InviteAPI.join(inviteId, code: "",
+                                                                   token: accountToken,
+                                                                   anonId: nil)
+            roomId = j.roomId
+            anonId = j.anonId
+            displaySelf = j.displayName
+            wsToken = j.wsToken
+            wsUrl = j.wsUrl
+            UserDefaults.standard.set(j.anonId, forKey: "anon:\(j.roomId)")
+
+            // 持久化密钥(刷新后保留聊天记录)
+            let b64 = SessionKeyUtil.b64url(key)
+            UserDefaults.standard.set(b64, forKey: "lmh.invite.key.\(j.roomId)")
+
+            // 拉历史并解密
+            status = .chat
+            await loadHistory(key: key, roomId: j.roomId)
+            connectWs()
+        } catch let e as ApiError where e.status == 404 {
+            status = .error("邀请不存在")
         } catch {
             errorMessage = "加入失败:\(error.localizedDescription)"
         }

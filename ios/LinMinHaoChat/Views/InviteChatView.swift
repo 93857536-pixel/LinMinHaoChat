@@ -5,19 +5,22 @@ import SwiftUI
 struct InviteChatView: View {
     let inviteId: String
     let sessionKeyB64url: String?
+    let accountMode: Bool
 
     @StateObject private var viewModel: InviteChatViewModel
     @State private var codeInput = ""
     @State private var inputText = ""
     @FocusState private var inputFocused: Bool
 
-    init(inviteId: String, sessionKeyB64url: String? = nil) {
+    init(inviteId: String, sessionKeyB64url: String? = nil, accountMode: Bool = false) {
         self.inviteId = inviteId
         self.sessionKeyB64url = sessionKeyB64url
+        self.accountMode = accountMode
         _viewModel = StateObject(wrappedValue: InviteChatViewModel(
             inviteId: inviteId,
             sessionKeyB64url: sessionKeyB64url,
-            accountToken: AppState.shared.authToken
+            accountToken: AppState.shared.authToken,
+            accountMode: accountMode
         ))
     }
 
