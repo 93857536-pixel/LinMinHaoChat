@@ -77,6 +77,15 @@ struct DecryptedMsg: Identifiable, Equatable {
         let name: String
         let size: Int
         let mime: String
+        let duration: Int?  // 语音消息时长(ms)
+        
+        init(attId: String, name: String, size: Int, mime: String, duration: Int? = nil) {
+            self.attId = attId
+            self.name = name
+            self.size = size
+            self.mime = mime
+            self.duration = duration
+        }
     }
     
     static func == (lhs: DecryptedMsg, rhs: DecryptedMsg) -> Bool {

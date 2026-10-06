@@ -43,6 +43,7 @@ struct ChatView: View {
     
     var body: some View {
         VStack(spacing: 0) {
+            // 状态栏
             HStack(spacing: 6) {
                 Circle().fill(viewModel.isReady ? Color.green : Color.orange).frame(width: 8, height: 8)
                 Text(viewModel.statusText).font(.caption)
@@ -54,26 +55,37 @@ struct ChatView: View {
             .padding(.horizontal, 16).padding(.vertical, 8).background(.bar)
             Divider()
             
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(viewModel.messages) { msg in
-                            MessageBubbleView(msg: msg, onCopy: { copyToClipboard(msg.text) },
-                                onDelete: viewModel.messages.contains(where: { $0.id == msg.id }) ? { viewModel.deleteMessage(msg.id) } : nil)
-                                .id(msg.id)
-                        }
-                    }
-                    .padding(.horizontal, 12).padding(.vertical, 10)
+            // 消息列表
+            if viewModel.messages.isEmpty {
+                VStack(spacing: 14) {
+                    Image(systemName: "lock.shield.fill").font(.system(size: 44)).foregroundStyle(Color.accentColor)
+                    Text("端到端加密会话已建立").font(.headline)
+                    Text("只有成员能读取消息内容").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 20)
                 }
-                .onChange(of: viewModel.messages.count) { _, _ in
-                    if let last = viewModel.messages.last {
-                        withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(last.id, anchor: .bottom) }
+                .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, 40)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 10) {
+                            ForEach(viewModel.messages) { msg in
+                                MessageBubbleView(msg: msg, onCopy: { copyToClipboard(msg.text) },
+                                    onDelete: viewModel.messages.contains(where: { $0.id == msg.id }) ? { viewModel.deleteMessage(msg.id) } : nil)
+                                    .id(msg.id)
+                            }
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 10)
+                    }
+                    .onChange(of: viewModel.messages.count) { _, _ in
+                        if let last = viewModel.messages.last {
+                            withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(last.id, anchor: .bottom) }
+                        }
                     }
                 }
             }
             
             Divider()
             
+            // 图片预览
             if let img = selectedImage {
                 Image(uiImage: img).resizable().aspectRatio(contentMode: .fill).frame(height: 180).clipped()
                     .overlay(alignment: .topTrailing) {
@@ -84,13 +96,17 @@ struct ChatView: View {
                     }.padding(.horizontal)
             }
             
+            // 输入栏
             HStack(alignment: .bottom, spacing: 10) {
+                // 图片按钮
                 Button { showPicker = true } label: {
                     Image(systemName: "photo").font(.system(size: 20)).frame(width: 38, height: 38).foregroundStyle(.secondary)
                 }.buttonStyle(.plain)
                 
+                // 文本输入
                 TextField("加密消息", text: $inputText, axis: .vertical).lineLimit(1...5).focused($inputFocused).lmhChatInputBubble()
                 
+                // 发送按钮
                 Button {
                     if let img = selectedImage {
                         selectedImage = nil
@@ -128,7 +144,7 @@ struct ChatView: View {
         guard let data = image.jpegData(compressionQuality: 0.8),
               let token = AppState.shared.authToken,
               let sessionKey = viewModel.currentSessionKey else {
-            errorMessage = "图片处理失败或会话密钥缺失"; return
+            errorMessage = "图片处理失败"; return
         }
         isSending = true; defer { isSending = false }
         do {
