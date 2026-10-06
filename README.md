@@ -18,7 +18,7 @@
 前往 [Releases](https://github.com/93857536-pixel/LinMinHaoChat/releases) 下载最新安装包:
 
 - `LinMinHaoChat-unsigned-v1.9.13.ipa` — **iOS** 未签名 IPA(iPhone arm64,iOS 17.0+)
-- `LinMinHaoChat-android-v1.9.13.apk` — **Android** APK(Android 12 / API 31 及以上,已签名,直接安装)
+- `LinMinHaoChat-android-v1.9.14.apk` — **Android** APK(Android 12 / API 31 及以上,已签名,直接安装)
 
 ## 安装方法(未签名 IPA)
 
@@ -36,7 +36,7 @@
 
 ## 安装方法(Android APK)
 
-1. 手机下载 `LinMinHaoChat-android-v1.9.13.apk`
+1. 手机下载 `LinMinHaoChat-android-v1.9.14.apk`
 2. 点击安装;若提示「未知来源应用」,在系统设置里允许该文件管理器安装应用即可
 3. 要求 **Android 12(API 31)及以上**。安装包已用固定证书签名,后续版本可直接覆盖升级
 
