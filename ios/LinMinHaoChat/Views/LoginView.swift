@@ -31,6 +31,15 @@ struct LoginView: View {
         ProcessInfo.processInfo.environment["SIMULATOR_DEVICE_NAME"] != nil
     }
 
+    /// 一键登录环境检测文案
+    private var oneTapUnavailableReason: String {
+        // 根据当前错误状态返回更详细的提示
+        if ProcessInfo.processInfo.environment["SIMULATOR_DEVICE_NAME"] != nil {
+            return "当前在模拟器上运行，一键登录需要在真机上使用，请改用验证码登录"
+        }
+        return "一键登录需要 SIM 卡 + 蜂窝网络，当前环境不可用，请改用验证码登录"
+    }
+
     private var countdownTimer: Timer?
 
     var body: some View {
@@ -172,7 +181,7 @@ struct LoginView: View {
                     .tint(.green)
                     .controlSize(.large)
                     .disabled(true)
-                    Text("一键登录需真机 SIM 卡 + 蜂窝网络,当前环境不可用,请改用下方验证码登录")
+                    Text(oneTapUnavailableReason)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)

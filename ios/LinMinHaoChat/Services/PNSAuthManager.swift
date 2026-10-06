@@ -248,7 +248,10 @@ final class PNSAuthManager {
                     break
                 case PNSCodeLoginControllerPresentFailed:
                     // 600002 授权页唤起失败(终态)
-                    completeOnce(.failed(reason: "授权页唤起失败,请重试"))
+                    // 可能原因:无SIM卡、蜂窝网络未开启、运营商不支持、网络异常
+                    let dictStr = String(describing: dict)
+                    self?.pnsLog("[PNS] 600002 授权页唤起失败，附加信息：\(dictStr)")
+                    completeOnce(.failed(reason: "授权页唤起失败，请检查：1.是否插入SIM卡 2.是否开启蜂窝数据 3.网络是否正常"))
                 case PNSCodeLoginControllerClickLoginBtn:
                     // 700002 用户点击授权页登录按钮(中间事件,SDK 内部会继续获取 token)
                     // ⚠️ 诊断:打印 isChecked 确认 checkbox 状态(官方文档:未勾选则不取 token)
