@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// API 错误(带 HTTP 状态码与服务器返回的 error 字段)
+/// API 错误(带 HTTP 状态码;data 为响应 JSON 的顶层字段字典,含 seq/retryAfterSec 等)
 struct ApiError: Error, LocalizedError {
     let status: Int
     let message: String
@@ -80,39 +80,16 @@ enum APIClient {
         guard let http = resp as? HTTPURLResponse else {
             throw ApiError(status: -1, message: "网络错误")
         }
-        guard (200...299).contains(http.statusCode) else {
-            do {
-                let err = try JSONDecoder().decode(ApiErrorResult.self, from: data)
-                throw ApiError(status: http.statusCode, message: err.error ?? err.message ?? "请求失败", data: err.data)
-            } catch {
-                throw ApiError(status: http.statusCode, message: String(data: data, encoding: .utf8) ?? "请求失败")
-            }
-        }
-        return data
-    }
-
-    struct ApiErrorResult: Decodable {
-        let ok: Bool?
-        let error: String?
-        let message: String?
-        var data: [String: Any]?
-
-        private enum CodingKeys: String, CodingKey {
-            case ok, error, message, data
-        }
-
-        init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            ok = try container.decodeIfPresent(Bool.self, forKey: .ok)
-            error = try container.decodeIfPresent(String.self, forKey: .error)
-            message = try container.decodeIfPresent(String.self, forKey: .message)
-            // data 字段可能是任意 JSON 对象，用嵌套解码器解析
-            data = nil
-        }
+        guard !(200...299).contains(http.statusCode) else { return data }
+        // 错误体统一用 JSONSerialization 解析顶层字典(seq / retryAfterSec 等在顶层,
+        // 409/429 时上层需要读取;[String: Any] 无法走 JSONDecoder)
+        let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        let msg = (dict?["error"] as? String) ?? (dict?["message"] as? String) ?? "请求失败(\(http.statusCode))"
+        throw ApiError(status: http.statusCode, message: msg, data: dict)
     }
 }
 
-// MARK: - 登录认证
+// MARK: - 登录认证(与 server/src/routes/auth.ts 对齐)
 
 enum AuthAPI {
     struct SendCodeResult: Decodable { let ok: Bool; let expiresInSec: Int }
@@ -122,58 +99,58 @@ enum AuthAPI {
         let user: User
         let token: String
         let sessionId: String
-        let expiresIn: Int
     }
 
+    /// 发送验证码(手机 or 邮箱统一端点)
     static func sendCode(type: String, target: String) async throws -> SendCodeResult {
-        if type == "email" {
-            _ = try await APIClient.request("/auth/send-email-code", body: ["email": target], token: nil) as Empty
-            // 返回 dummy result，实际结果在 email 发送时
-            return SendCodeResult(ok: true, expiresInSec: 300)
-        } else {
-            _ = try await APIClient.request("/auth/send-code", body: ["phone": target], token: nil) as Empty
-            return SendCodeResult(ok: true, expiresInSec: 300)
-        }
+        try await APIClient.request("/auth/send-code", body: ["type": type, "target": target])
     }
 
-    static func login(type: String, target: String, code: String, deviceId: String, ed25519Pub: String, ecdhPub: String) async throws -> AuthResult {
-        if type == "email" {
-            try await APIClient.request("/auth/login-email", body: ["email": target, "code": code, "deviceId": deviceId, "ed25519Pub": ed25519Pub, "ecdhPub": ecdhPub])
-        } else {
-            try await APIClient.request("/auth/login-phone", body: ["phone": target, "code": code, "deviceId": deviceId, "ed25519Pub": ed25519Pub, "ecdhPub": ecdhPub])
-        }
-    }
-
-    static func register(type: String, target: String, code: String, handle: String?, deviceId: String, ed25519Pub: String, ecdhPub: String) async throws -> AuthResult {
-        if type == "email" {
-            try await APIClient.request("/auth/register", body: ["email": target, "code": code, "handle": handle, "deviceId": deviceId, "ed25519Pub": ed25519Pub, "ecdhPub": ecdhPub])
-        } else {
-            try await APIClient.request("/auth/register", body: ["phone": target, "code": code, "handle": handle, "deviceId": deviceId, "ed25519Pub": ed25519Pub, "ecdhPub": ecdhPub])
-        }
-    }
-
-    static func verifyPns(token: String) async throws -> Empty {
-        try await APIClient.request("/auth/pns", method: "POST", body: ["token": token])
-    }
-
-    static func logout(token: String) async throws -> Empty {
-        try await APIClient.request("/auth/logout", token: token)
-    }
-
-    static func phoneCheck(spToken: String, deviceId: String, ed25519Pub: String, ecdhPub: String) async throws -> AuthResult {
-        try await APIClient.request("/auth/pns-check", body: [
-            "spToken": spToken,
-            "deviceId": deviceId,
-            "ed25519Pub": ed25519Pub,
-            "ecdhPub": ecdhPub
+    /// 注册(验证码登录即注册;可选携带本设备公钥)
+    static func register(type: String, target: String, code: String, handle: String?,
+                         deviceId: String, ed25519Pub: String, ecdhPub: String) async throws -> AuthResult {
+        try await APIClient.request("/auth/register", body: [
+            "type": type, "target": target, "code": code, "handle": handle,
+            "deviceId": deviceId, "ed25519Pub": ed25519Pub, "ecdhPub": ecdhPub,
         ])
+    }
+
+    /// 登录(仅验证码)
+    static func login(type: String, target: String, code: String,
+                      deviceId: String, ed25519Pub: String, ecdhPub: String) async throws -> AuthResult {
+        try await APIClient.request("/auth/login", body: [
+            "type": type, "target": target, "code": code,
+            "deviceId": deviceId, "ed25519Pub": ed25519Pub, "ecdhPub": ecdhPub,
+        ])
+    }
+
+    /// 登出:作废当前 session
+    static func logout(sessionId: String, token: String) async throws -> Empty {
+        try await APIClient.request("/auth/logout", body: ["sessionId": sessionId], token: token)
+    }
+
+    /// 号码认证一键登录(SpToken → GetMobile 换号,server /api/pns/phone-check)
+    static func phoneCheck(spToken: String, handle: String? = nil,
+                           deviceId: String, ed25519Pub: String, ecdhPub: String) async throws -> AuthResult {
+        var body: [String: Any] = ["spToken": spToken,
+                                   "deviceId": deviceId,
+                                   "ed25519Pub": ed25519Pub,
+                                   "ecdhPub": ecdhPub]
+        if let handle, !handle.isEmpty { body["handle"] = handle }
+        let result: AuthResult = try await APIClient.request("/pns/phone-check", body: body)
+        return result
     }
 }
 
-// MARK: - 密钥管理
+// MARK: - 密钥管理(与 server/src/routes/keys.ts 对齐)
 
 enum KeysAPI {
-    struct KeysResult: Decodable {
+    struct KeysBundle: Decodable {
+        let ok: Bool
+        let keys: [String]   // 我的 wrappedKey 字符串数组(每设备一个,JSON 文本)
+    }
+
+    struct UserKeysResult: Decodable {
         let ok: Bool
         struct Device: Decodable {
             let device_id: String
@@ -183,11 +160,7 @@ enum KeysAPI {
         let devices: [Device]
     }
 
-    struct UserLookupResult: Decodable {
-        let ok: Bool
-        let devices: [KeysResult.Device]
-    }
-
+    /// 上传/更新我的公钥(每设备)
     static func register(token: String) async throws {
         let identity = try IdentityStore.ensure()
         let _: Empty = try await APIClient.request("/keys/register",
@@ -195,26 +168,37 @@ enum KeysAPI {
             token: token)
     }
 
-    static func getExportPackage(deviceId: String, token: String) async throws -> String? {
-        struct R: Decodable { let ok: Bool; let pkg: String? }
-        let r: R = try await APIClient.request("/keys/export-package?deviceId=\(deviceId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? deviceId)", token: token)
-        return r.pkg
+    /// 拉取我的房间会话密钥包(仅"我的"设备 wrapped keys)
+    static func roomKeys(_ roomId: String, deviceId: String, token: String) async throws -> KeysBundle {
+        try await APIClient.request("/chat/rooms/\(roomId)/keys?deviceId=\(deviceId)", token: token)
     }
 
+    /// 追加 wrapped key(群聊邀请新成员 / 新设备加入)
+    static func addRoomKey(_ roomId: String, userId: Int, deviceId: String, wrappedKey: String, token: String) async throws -> Empty {
+        try await APIClient.request("/chat/rooms/\(roomId)/keys",
+                                    body: ["userId": userId, "deviceId": deviceId, "wrappedKey": wrappedKey],
+                                    token: token)
+    }
+
+    /// 保存加密导出包(仅保留最新一份)
     static func saveExportPackage(pkg: String, deviceId: String, token: String) async throws {
         let _: Empty = try await APIClient.request("/keys/export-package", body: ["pkg": pkg, "deviceId": deviceId], token: token)
     }
-    
-    static func keys(_ roomId: String, deviceId: String, token: String) async throws -> KeysResult {
-        try await APIClient.request("/chat/rooms/\(roomId)/keys?deviceId=\(deviceId)", token: token)
+
+    /// 拉取我的加密导出包
+    static func getExportPackage(deviceId: String, token: String) async throws -> String? {
+        struct R: Decodable { let ok: Bool; let pkg: String? }
+        let r: R = try await APIClient.request("/keys/export-package?deviceId=\(deviceId)", token: token)
+        return r.pkg
     }
-    
-    static func getUserKeys(_ userId: Int, token: String) async throws -> UserLookupResult {
-        try await APIClient.request("/keys/user/\(userId)", token: token)
+
+    /// 查询用户公钥(创建会话用;对应 server GET /keys/public/:userId)
+    static func getUserKeys(_ userId: Int, token: String) async throws -> UserKeysResult {
+        try await APIClient.request("/keys/public/\(userId)", token: token)
     }
 }
 
-// MARK: - 临时聊天
+// MARK: - 临时聊天(与 server/src/routes/temp.ts 对齐)
 
 enum TempAPI {
     struct CreateResult: Decodable { let ok: Bool; let roomId: String; let expiresAt: Int64 }
@@ -241,84 +225,130 @@ enum TempAPI {
 
     static func join(_ roomId: String, anonId: String?) async throws -> JoinResult {
         try await APIClient.request("/temp/rooms/\(roomId)/join",
-                                    body: anonId.map { ["anonId": $0] } ?? [:])
+                                    body: anonId.map { ["anonId": $0] } ?? [:]) as JoinResult
     }
 
-    static func send(_ roomId: String, iv: String, cipher: String, anonId: String, seq: Int, ts: Int64) async throws -> SendResult {
-        try await APIClient.request("/temp/rooms/\(roomId)/messages",
-            body: ["iv": iv, "cipher": cipher, "anonId": anonId, "seq": seq, "ts": ts])
+    static func send(_ roomId: String, iv: String, cipher: String, anonId: String, seq: Int, ts: Int64, meta: String? = nil) async throws -> SendResult {
+        var body: [String: Any] = ["iv": iv, "cipher": cipher, "anonId": anonId, "seq": seq, "ts": ts]
+        if let meta { body["meta"] = meta }
+        let result: SendResult = try await APIClient.request("/temp/rooms/\(roomId)/messages", body: body)
+        return result
     }
 
     static func history(_ roomId: String, afterSeq: Int = 0, limit: Int = 100) async throws -> HistoryResult {
-        try await APIClient.request("/temp/rooms/\(roomId)/messages?afterSeq=\(afterSeq)&limit=\(limit)")
+        try await APIClient.request("/temp/rooms/\(roomId)/messages?afterSeq=\(afterSeq)&limit=\(limit)") as HistoryResult
+    }
+
+    static func leave(_ roomId: String) async throws -> Empty {
+        try await APIClient.request("/temp/rooms/\(roomId)/leave", method: "POST")
     }
 }
 
-// MARK: - 账号聊天
+// MARK: - 账号聊天(与 server/src/routes/chat.ts 对齐)
 
 enum ChatAPI {
     struct RoomsResult: Decodable {
         let ok: Bool
         let rooms: [RoomMeta]
     }
-    
+
+    struct RoomResult: Decodable {
+        let ok: Bool
+        let room: RoomMeta
+    }
+
     struct HistoryResult: Decodable {
         let ok: Bool
         let messages: [ChatMsg]
         let hasMore: Bool
     }
-    
+
     struct CreateResult: Decodable {
         let ok: Bool
-        let roomId: String
-        let token: String
+        let room: RoomMeta
     }
-    
+
     struct SendResult: Decodable {
         let ok: Bool
         let seq: Int
         let id: String
         let ts: Int64
     }
-    
+
     struct MarkReadResult: Decodable {
         let ok: Bool
     }
-    
+
+    struct OnlineResult: Decodable {
+        let ok: Bool
+        let online: [Int]
+    }
+
+    /// 我的房间列表
     static func rooms(token: String) async throws -> RoomsResult {
         try await APIClient.request("/chat/rooms", token: token)
     }
-    
-    static func history(_ roomId: String, token: String, afterSeq: Int = 0, limit: Int = 100) async throws -> HistoryResult {
-        try await APIClient.request("/chat/rooms/\(roomId)/messages?afterSeq=\(afterSeq)&limit=\(limit)", token: token)
-    }
-    
+
+    /// 创建会话(dm/group)。wrappedKeys: [{userId, deviceId, wrappedKey}]
     static func createRoom(type: String, memberIds: [Int], nameEnc: String?, wrappedKeys: [WrappedKeyEntry], token: String) async throws -> CreateResult {
-        try await APIClient.request("/chat/rooms", method: "POST", body: [
+        try await APIClient.request("/chat/rooms", body: [
             "type": type,
             "memberIds": memberIds,
             "nameEnc": nameEnc,
-            "wrappedKeys": wrappedKeys
+            "wrappedKeys": wrappedKeys,
         ], token: token)
     }
-    
+
+    /// 会话详情
+    static func room(_ roomId: String, token: String) async throws -> RoomResult {
+        try await APIClient.request("/chat/rooms/\(roomId)", token: token)
+    }
+
+    /// 拉取会话密钥包(仅"我的" wrapped keys)
+    static func keys(_ roomId: String, deviceId: String, token: String) async throws -> KeysAPI.KeysBundle {
+        try await APIClient.request("/chat/rooms/\(roomId)/keys?deviceId=\(deviceId)", token: token)
+    }
+
+    /// 追加 wrapped key(群聊新成员 / 新设备)
+    static func addKey(_ roomId: String, userId: Int, deviceId: String, wrappedKey: String, token: String) async throws -> Empty {
+        try await APIClient.request("/chat/rooms/\(roomId)/keys",
+                                    body: ["userId": userId, "deviceId": deviceId, "wrappedKey": wrappedKey],
+                                    token: token)
+    }
+
+    /// 群聊添加成员
+    static func addMember(_ roomId: String, userId: Int, token: String) async throws -> Empty {
+        try await APIClient.request("/chat/rooms/\(roomId)/add-member", body: ["userId": userId], token: token)
+    }
+
+    /// 发送密文消息
     static func send(_ roomId: String, iv: String, cipher: String, seq: Int, ts: Int64, kind: String, meta: String? = nil, token: String) async throws -> SendResult {
-        try await APIClient.request("/chat/rooms/\(roomId)/messages", method: "POST", body: [
-            "iv": iv,
-            "cipher": cipher,
-            "seq": seq,
-            "ts": ts,
-            "kind": kind,
-            "meta": meta
-        ], token: token)
+        var body: [String: Any] = ["iv": iv, "cipher": cipher, "seq": seq, "ts": ts, "kind": kind]
+        if let meta { body["meta"] = meta }
+        let result: SendResult = try await APIClient.request("/chat/rooms/\(roomId)/messages", body: body, token: token)
+        return result
     }
-    
+
+    /// 拉取历史密文(分页)
+    static func history(_ roomId: String, afterSeq: Int = 0, beforeSeq: Int = 0, limit: Int = 100, token: String) async throws -> HistoryResult {
+        var q = "/chat/rooms/\(roomId)/messages?afterSeq=\(afterSeq)&limit=\(limit)"
+        if beforeSeq > 0 { q += "&beforeSeq=\(beforeSeq)" }
+        let result: HistoryResult = try await APIClient.request(q, token: token)
+        return result
+    }
+
+    /// 已读回执(元数据)
     static func markRead(_ roomId: String, lastSeq: Int, token: String) async throws -> MarkReadResult {
-        try await APIClient.request("/chat/rooms/\(roomId)/read?lastSeq=\(lastSeq)", token: token)
+        try await APIClient.request("/chat/rooms/\(roomId)/read", body: ["lastSeq": lastSeq], token: token)
+    }
+
+    /// 在线成员列表
+    static func online(_ roomId: String, token: String) async throws -> OnlineResult {
+        try await APIClient.request("/chat/rooms/\(roomId)/online", token: token)
     }
 }
 
-// MARK: - 邀请链接
+// MARK: - 邀请链接(与 server/src/routes/invite.ts 对齐:链接 + 6 位验证码,密钥走 #fragment)
 
 enum InviteAPI {
     struct CreateResult: Decodable {
@@ -331,8 +361,43 @@ enum InviteAPI {
         let link: String
     }
 
+    struct InfoResult: Decodable {
+        let ok: Bool
+        let inviteId: String
+        let roomId: String
+        let codeExpired: Bool
+        let roomExpired: Bool
+        let roomStatus: String
+        let messageCount: Int
+        let roomKind: String
+    }
+
+    struct JoinResult: Decodable {
+        let ok: Bool
+        let roomId: String
+        let anonId: String
+        let displayName: String
+        let wsToken: String
+        let wsUrl: String
+    }
+
+    /// 创建邀请(返回 6 位验证码 + 链接;客户端自行把 #k=<sessionKey> 拼进分享链接)
     static func create() async throws -> CreateResult {
         try await APIClient.request("/invite/create", method: "POST")
+    }
+
+    /// 邀请信息(打开链接后检查房间状态)
+    static func info(_ inviteId: String) async throws -> InfoResult {
+        try await APIClient.request("/invite/\(inviteId)")
+    }
+
+    /// 校验验证码 + 加入房间(游客或账号身份)→ 颁发短期 WS 令牌
+    static func join(_ inviteId: String, code: String, token: String?, anonId: String?) async throws -> JoinResult {
+        var body: [String: Any] = ["code": code]
+        if let token, !token.isEmpty { body["token"] = token }
+        if let anonId, !anonId.isEmpty { body["anonId"] = anonId }
+        let result: InviteAPI.JoinResult = try await APIClient.request("/invite/\(inviteId)/join", body: body)
+        return result
     }
 }
 
