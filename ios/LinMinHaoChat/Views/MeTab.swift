@@ -145,6 +145,14 @@ struct MeTab: View {
                     }
                 }
 
+                Section("消息管理") {
+                    NavigationLink {
+                        StarredListView()
+                    } label: {
+                        meRow("收藏消息", icon: "star.fill", tint: .orange)
+                    }
+                }
+
                 if appState.isLoggedIn {
                     Section {
                         Button("退出登录", role: .destructive) {

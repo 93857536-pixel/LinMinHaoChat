@@ -497,3 +497,34 @@ enum AttachmentAPI {
 
 // 服务器成功但不返回 body 的响应
 struct Empty: Decodable {}
+
+// MARK: - 收藏消息
+struct StarredMsg: Decodable, Identifiable {
+    let id: String
+    let roomId: String
+    let seq: Int
+    let ts: Int64
+    let kind: String
+    let metaEnc: String?
+    let cipherPath: String
+    let iv: String
+}
+
+enum StarredAPI {
+    /// 收藏消息
+    static func star(_ msgId: String, token: String) async throws {
+        let _: Empty = try await APIClient.request("/chat/messages/\(msgId)/star", method: "POST", token: token)
+    }
+
+    /// 取消收藏
+    static func unstar(_ msgId: String, token: String) async throws {
+        let _: Empty = try await APIClient.request("/chat/messages/\(msgId)/star", method: "DELETE", token: token)
+    }
+
+    /// 获取我的收藏列表
+    static func list(token: String) async throws -> [StarredMsg] {
+        struct R: Decodable { let ok: Bool; let starred: [StarredMsg] }
+        let result: R = try await APIClient.request("/chat/starred", token: token)
+        return result.starred
+    }
+}

@@ -102,7 +102,9 @@ struct InviteChatView: View {
                                     msg: msg,
                                     onCopy: { UIPasteboard.general.string = msg.text },
                                     onDelete: nil,
-                                    onForward: nil
+                                    onForward: nil,
+                                    isStarred: false,
+                                    onStar: {}
                                 ).id(msg.id)
                             }
                         }

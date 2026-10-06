@@ -275,6 +275,57 @@ type BroadcastFn = (roomId: string, payload: unknown) => void;
 let broadcast: BroadcastFn = () => {};
 export function setChatBroadcast(fn: BroadcastFn) { broadcast = fn; }
 
+/** 收藏消息 */
+chatRouter.post('/messages/:msgId/star', (req, res) => {
+  const msgId = String(req.params.msgId);
+  const msg = db.prepare('SELECT id, room_id, seq, ts FROM messages WHERE id=?').get(msgId) as MsgRow | undefined;
+  if (!msg) return res.status(404).json({ error: 'not_found' });
+  if (!isMember(msg.room_id, req.user!.id)) return res.status(403).json({ error: 'not_member' });
+  
+  const existing = db.prepare('SELECT 1 FROM user_starred_messages WHERE user_id=? AND msg_id=?').get(req.user!.id, msgId);
+  if (existing) return res.status(409).json({ error: 'already_starred' });
+  
+  db.prepare('INSERT INTO user_starred_messages (user_id, room_id, msg_id, seq, ts, created_at) VALUES (?,?,?,?,?,?)')
+    .run(req.user!.id, msg.room_id, msgId, msg.seq, msg.ts, Date.now());
+  
+  logger.info('message_starred', { msgId, roomId: msg.room_id, userId: req.user!.id });
+  res.json({ ok: true });
+});
+
+/** 取消收藏 */
+chatRouter.delete('/messages/:msgId/star', (req, res) => {
+  const msgId = String(req.params.msgId);
+  const result = db.prepare('DELETE FROM user_starred_messages WHERE user_id=? AND msg_id=?')
+    .run(req.user!.id, msgId);
+  if (result.changes === 0) return res.status(404).json({ error: 'not_found' });
+  res.json({ ok: true });
+});
+
+/** 我的收藏列表 */
+chatRouter.get('/starred', (req, res) => {
+  const rows = db.prepare(`
+    SELECT s.room_id, s.msg_id, s.seq, s.ts, m.kind, m.meta_enc, m.cipher_path, m.iv
+    FROM user_starred_messages s
+    JOIN messages m ON m.id = s.msg_id
+    WHERE s.user_id = ?
+    ORDER BY s.created_at DESC
+    LIMIT 100
+  `).all(req.user!.id) as (MsgRow & { room_id: string; msg_id: string; seq: number; ts: number; kind: string; meta_enc: string | null; cipher_path: string; iv: string })[];
+  
+  const result = rows.map(r => ({
+    msgId: r.msg_id,
+    roomId: r.room_id,
+    seq: r.seq,
+    ts: r.ts,
+    kind: r.kind,
+    metaEnc: r.meta_enc,
+    cipherPath: r.cipher_path,
+    iv: r.iv
+  }));
+  
+  res.json({ ok: true, starred: result });
+});
+
 type OnlineFn = (roomId: string) => number[];
 let onlineMembers: OnlineFn = () => [];
 export function setOnlineMembers(fn: OnlineFn) { onlineMembers = fn; }

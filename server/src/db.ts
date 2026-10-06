@@ -124,6 +124,16 @@ CREATE TABLE IF NOT EXISTS friendships (
   PRIMARY KEY (user_id, friend_id)
 );
 CREATE INDEX IF NOT EXISTS idx_friendships_user ON friendships(user_id);
+CREATE TABLE IF NOT EXISTS user_starred_messages (
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  room_id    TEXT NOT NULL,
+  msg_id     TEXT NOT NULL,
+  seq        INTEGER NOT NULL,
+  ts         INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, msg_id)
+);
+CREATE INDEX IF NOT EXISTS idx_starred_user ON user_starred_messages(user_id, created_at DESC);
 `);
 
 /** 服务器重启后校验数据目录可写(快速自检) */

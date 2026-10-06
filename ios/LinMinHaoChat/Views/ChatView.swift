@@ -39,6 +39,8 @@ struct ChatView: View {
     @State private var forwardMsg: DecryptedMsg?
     @State private var rooms: [(id: String, name: String)] = []
     @State private var isForwarding = false
+    @State private var starredMsgIds = Set<String>()
+    @State private var showStarredSheet = false
     
     init(session: ChatRoomSession) {
         self.session = session
@@ -72,10 +74,15 @@ struct ChatView: View {
                     ScrollView {
                         LazyVStack(spacing: 10) {
                             ForEach(viewModel.messages) { msg in
-                                MessageBubbleView(msg: msg, onCopy: { copyToClipboard(msg.text) },
+                                MessageBubbleView(
+                                    msg: msg,
+                                    onCopy: { copyToClipboard(msg.text) },
                                     onDelete: viewModel.messages.contains(where: { $0.id == msg.id }) ? { viewModel.deleteMessage(msg.id) } : nil,
-                                    onForward: { forwardMsg = msg; showForwardSheet = true })
-                                    .id(msg.id)
+                                    onForward: { forwardMsg = msg; showForwardSheet = true },
+                                    isStarred: starredMsgIds.contains(msg.id),
+                                    onStar: { Task { await toggleStar(msg) } }
+                                )
+                                .id(msg.id)
                             }
                         }
                         .padding(.horizontal, 12).padding(.vertical, 10)
@@ -140,6 +147,57 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showPicker) { ImagePicker(image: $selectedImage) }
         .sheet(isPresented: $showForwardSheet) { forwardSheet }
+        .sheet(isPresented: $showStarredSheet) { starredSheet }
+        .onAppear { loadStarred() }
+    }
+    
+    private func toggleStar(_ msg: DecryptedMsg) async {
+        guard let token = AppState.shared.authToken else { return }
+        if starredMsgIds.contains(msg.id) {
+            do {
+                try await StarredAPI.unstar(msg.id, token: token)
+                starredMsgIds.remove(msg.id)
+            } catch {
+                errorMessage = "取消收藏失败"
+            }
+        } else {
+            do {
+                try await StarredAPI.star(msg.id, token: token)
+                starredMsgIds.insert(msg.id)
+            } catch {
+                errorMessage = "收藏失败"
+            }
+        }
+    }
+    
+    private func loadStarred() {
+        guard let token = AppState.shared.authToken else { return }
+        Task {
+            do {
+                let starred = try await StarredAPI.list(token: token)
+                starredMsgIds = Set(starred.map { $0.id })
+            } catch {}
+        }
+    }
+    
+    private var starredSheet: some View {
+        NavigationView {
+            List {
+                if starredMsgIds.isEmpty {
+                    Text("暂无收藏消息")
+                        .foregroundStyle(.secondary)
+                        .font(.callout)
+                }
+                // 收藏消息列表由StarredView处理
+            }
+            .navigationTitle("收藏消息")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { showStarredSheet = false }
+                }
+            }
+        }
     }
     
     private var forwardSheet: some View {
@@ -257,6 +315,8 @@ struct MessageBubbleView: View {
     let onCopy: () -> Void
     let onDelete: (() -> Void)?
     let onForward: (() -> Void)?
+    let isStarred: Bool
+    let onStar: () -> Void
     
     var body: some View {
         HStack {
@@ -278,6 +338,7 @@ struct MessageBubbleView: View {
             }
             .contextMenu {
                 if msg.text.count > 0 { Button { onCopy() } label: { Label("复制", systemImage: "doc.on.doc") } }
+                Button { onStar() } label: { Label(isStarred ? "取消收藏" : "收藏", systemImage: isStarred ? "star.fill" : "star") }
                 if let onForward = onForward { Button { onForward() } label: { Label("转发", systemImage: "arrowshape.turn.up.right") } }
                 if msg.mine {
                     if let onDelete = onDelete { Button(role: .destructive) { onDelete() } label: { Label("删除", systemImage: "trash") } }
