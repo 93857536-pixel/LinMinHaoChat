@@ -17,13 +17,13 @@
 
 前往 [Releases](https://github.com/93857536-pixel/LinMinHaoChat/releases) 下载最新安装包:
 
-- `LinMinHaoChat-unsigned-v1.9.12.ipa` — **未签名** IPA(iPhone arm64,iOS 17.0+)
+- `LinMinHaoChat-unsigned-v1.9.13.ipa` — **未签名** IPA(iPhone arm64,iOS 17.0+)
 
 ## 安装方法(未签名 IPA)
 
 未签名 IPA 不能直接安装,需要借助第三方签名/侧载工具:
 
-1. 下载 `LinMinHaoChat-unsigned-v1.9.12.ipa`
+1. 下载 `LinMinHaoChat-unsigned-v1.9.13.ipa`
 2. 任选一种方式签名安装:
    - **全能签 App**(App Store 搜索"全能签"):选择"签名安装",读取本地 IPA,选"免费个人签"(7 天有效,到期重装即可);企业签可长期有效
    - **ESign / SideStore / AltStore** 等类似工具:导入 IPA → 用你的 Apple ID 免费签名安装
