@@ -231,8 +231,14 @@ struct MeTab: View {
     }
 
     private func uploadLog() async {
+        // 首次点击时日志还没读进内存:先读取,再继续上传(旧逻辑这里直接 return,
+        // 导致必须点两次才开始上传 —— 用户会误以为按钮坏了)
+        if logContent.isEmpty {
+            logContent = PNSAuthManager.shared.getLogContent()
+        }
+        showLogSheet = true   // 让用户看到本次实际发出的内容
         guard !logContent.isEmpty else {
-            await loadLogContent()
+            uploadStatus = .failed("暂无日志可上传")
             return
         }
         uploadStatus = .uploading
