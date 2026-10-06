@@ -263,10 +263,10 @@ struct LoginView: View {
         VStack(alignment: .leading, spacing: 12) {
             LabeledContent("状态", value: "已登录(账号聊天功能下一阶段接入)")
             Divider()
-            Button("退出登录", role: .destructive) {
-                appState.logout()
-            }
-            .frame(maxWidth: .infinity)
+            // ⚠️ 全 App 只保留一处退出登录(我的 → 账号与安全),此处不再放置登出按钮
+            Text("需要退出登录?请到「我的 → 账号与安全」中操作。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground))
