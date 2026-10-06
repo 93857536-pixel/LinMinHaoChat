@@ -65,7 +65,7 @@ struct LoginView: View {
             .padding(.top, 12)
         }
         .background(Color(.systemGroupedBackground))
-        .navigationTitle("登录 / 注册")
+        .navigationTitle(isRegisterMode ? "注册" : "登录")
         .navigationBarTitleDisplayMode(.inline)
         // 进登录页/切账号类型时后台预取号(accelerateLoginPage),授权页秒弹;
         // 真机+蜂窝环境才有意义,模拟器自动跳过(oneTapUnavailable)
