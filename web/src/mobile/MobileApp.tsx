@@ -7,6 +7,9 @@ import MeScreen from '../features/me/MeScreen';
 import DiscoverScreen from '../features/shell/DiscoverScreen';
 import PrivacyGate from './PrivacyGate';
 import { registerTabSetter } from '../features/shell/tabNav';
+import { parseDeepLink, isDeepLinkPath } from './deeplink';
+import InviteChat from '../pages/InviteChat';
+import TempChat from '../pages/TempChat';
 import './mobile.css';
 
 export type TabKey = 'chats' | 'contacts' | 'discover' | 'me';
@@ -38,6 +41,56 @@ export default function MobileApp() {
     registerTabSetter(setTab);
     return () => registerTabSetter(null);
   }, []);
+
+  // 深链:lmhchat://invite/<id> / https://chat.linminhao.top/i/<id>(邀请与临时聊天无需登录)
+  const [deepPath, setDeepPath] = useState<string | null>(null);
+  useEffect(() => {
+    let sub: { remove: () => void } | undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        const handle = (raw?: string | null) => {
+          if (!raw || cancelled) return;
+          const p = parseDeepLink(raw);
+          if (p) {
+            window.history.pushState({}, '', p);
+            setDeepPath(p);
+          }
+        };
+        const launch = await CapApp.getLaunchUrl();
+        handle(launch?.url ?? null);
+        sub = await CapApp.addListener('appUrlOpen', (e) => handle(e.url));
+      } catch {
+        // 非原生环境(浏览器直开):深链由 location 自然处理,无需接管
+      }
+    })();
+    return () => {
+      cancelled = true;
+      sub?.remove();
+    };
+  }, []);
+
+  const closeDeep = () => {
+    window.history.replaceState({}, '', '/');
+    setDeepPath(null);
+  };
+
+  // 深链页面优先于登录态判定:邀请聊天/临时聊天本身支持未登录进入
+  if (isDeepLinkPath(deepPath)) {
+    return (
+      <PrivacyGate>
+        <div className="mv-shell">
+          <div className="mv-deeplink-bar">
+            <button className="mv-back" onClick={closeDeep}>← 返回</button>
+          </div>
+          <div className="mv-body">
+            {deepPath!.startsWith('/i/') ? <InviteChat /> : <TempChat />}
+          </div>
+        </div>
+      </PrivacyGate>
+    );
+  }
 
   if (!session) return <Login />;
 

@@ -22,6 +22,27 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- 深链①:自定义 scheme lmhchat://invite/<id>(与 iOS 同款) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="lmhchat" />
+            </intent-filter>
+
+            <!-- 深链②:官方网页链接 https://chat.linminhao.top/i/<id> 或 /t/<id>
+                 autoVerify=false:诚实标注未做 /.well-known/assetlinks.json 域名校验,
+                 故系统会弹「用哪个应用打开」选择框(而非静默直达),功能不受影响。 -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="chat.linminhao.top" android:pathPrefix="/i/" />
+                <data android:scheme="https" android:host="chat.linminhao.top" android:pathPrefix="/t/" />
+                <data android:scheme="https" android:host="linminhao.top" android:pathPrefix="/i/" />
+                <data android:scheme="https" android:host="linminhao.top" android:pathPrefix="/t/" />
+            </intent-filter>
+
         </activity>
 
         <provider
