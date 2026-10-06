@@ -46,9 +46,19 @@ struct HomeView: View {
                 .controlSize(.large)
 
                 NavigationLink {
-                    LoginView()
+                    LoginView(preferRegister: false)
                 } label: {
-                    Label(appState.isLoggedIn ? "账号(已登录)" : "登录 / 注册", systemImage: "person.crop.circle")
+                    Label(appState.isLoggedIn ? "账号(已登录)" : "登录", systemImage: "person.crop.circle")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+
+                NavigationLink {
+                    LoginView(preferRegister: true)
+                } label: {
+                    Label("注册", systemImage: "person.crop.circle.badge.plus")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
                 }

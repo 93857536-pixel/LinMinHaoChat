@@ -7,10 +7,17 @@ struct LoginView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
+    /// 进入时偏向的按钮模式:false=登录(默认) / true=注册。
+    /// 首页「登录」「注册」两个入口各自打开对应模式,页内可小字切换。
+    @State private var isRegisterMode: Bool
     @State private var target = ""          // 手机号或邮箱
     @State private var code = ""
     @State private var handle = ""          // 注册可选昵称
     @State private var isEmail = true
+
+    init(preferRegister: Bool = false) {
+        _isRegisterMode = State(initialValue: preferRegister)
+    }
     @State private var isSendingCode = false
     @State private var countdown = 0        // 发送验证码冷却倒计时(秒),防连点触发 otp 限流
     @State private var isSubmitting = false
@@ -189,31 +196,55 @@ struct LoginView: View {
                 }
             }
 
-            Button {
-                Task { await submit(register: true) }
-            } label: {
-                if isSubmitting {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 6)
-                } else {
-                    Text("注册").frame(maxWidth: .infinity).padding(.vertical, 6)
+            // 主按钮跟随入口模式(首页「登录」「注册」分两个入口进来),
+            // 另一模式用次级小按钮切换,避免「登录/注册」混在一个按钮里
+            if isRegisterMode {
+                Button {
+                    Task { await submit(register: true) }
+                } label: {
+                    if isSubmitting {
+                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, 6)
+                    } else {
+                        Text("注册").frame(maxWidth: .infinity).padding(.vertical, 6)
+                    }
                 }
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(code.isEmpty || isSubmitting)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(code.isEmpty || isSubmitting)
 
-            Button {
-                Task { await submit(register: false) }
-            } label: {
-                if isSubmitting {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 6)
-                } else {
-                    Text("登录").frame(maxWidth: .infinity).padding(.vertical, 6)
+                Button {
+                    Task { await submit(register: false) }
+                } label: {
+                    Text("已有账号?去登录").font(.footnote)
+                        .frame(maxWidth: .infinity).padding(.vertical, 6)
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(code.isEmpty || isSubmitting)
+            } else {
+                Button {
+                    Task { await submit(register: false) }
+                } label: {
+                    if isSubmitting {
+                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, 6)
+                    } else {
+                        Text("登录").frame(maxWidth: .infinity).padding(.vertical, 6)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(code.isEmpty || isSubmitting)
+
+                Button {
+                    Task { await submit(register: true) }
+                } label: {
+                    Text("新账号?去注册").font(.footnote)
+                        .frame(maxWidth: .infinity).padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(code.isEmpty || isSubmitting)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-            .disabled(code.isEmpty || isSubmitting)
         }
     }
 
