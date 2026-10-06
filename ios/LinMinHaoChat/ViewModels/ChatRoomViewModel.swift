@@ -16,6 +16,9 @@ final class ChatRoomViewModel: ObservableObject {
     private let token: String        // 账号 JWT
     private let identity: DeviceIdentity
     private var keyCache: SymmetricKey?
+
+    /// 公开 currentSessionKey (供 ChatView 使用)
+    var currentSessionKey: SymmetricKey? { keyCache }
     private var lastSeq = 0
     private var sending = false
     private var hasConnectedBefore = false
@@ -256,9 +259,12 @@ final class ChatRoomViewModel: ObservableObject {
     }
 
     // MARK: - 列表预览(本地缓存,不上传;进入/离开聊天通知列表刷新未读)
-    private func updatePreview() {
+    func updatePreview() {
         guard let last = messages.last else { return }
         ChatPreviewStore.shared.set(roomId, text: last.text, ts: last.ts, senderLabel: last.mine ? nil : last.label)
         AppState.shared.chatListVersion += 1
     }
+    
+    /// 公开 nextSeq (供发送附件使用)
+    var nextSeq: Int { get { lastSeq + 1 } set { lastSeq = newValue - 1 } }
 }

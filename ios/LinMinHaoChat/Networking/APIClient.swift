@@ -75,17 +75,18 @@ enum APIClient {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
-    private static func sendRaw(_ req: URLRequest) async throws -> Data {
+    /// 原始字节请求(附件上传/下载)
+    static func sendRaw(_ req: URLRequest) async throws -> Data {
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse else {
             throw ApiError(status: -1, message: "网络错误")
         }
-        guard !(200...299).contains(http.statusCode) else { return data }
-        // 错误体统一用 JSONSerialization 解析顶层字典(seq / retryAfterSec 等在顶层,
-        // 409/429 时上层需要读取;[String: Any] 无法走 JSONDecoder)
-        let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        let msg = (dict?["error"] as? String) ?? (dict?["message"] as? String) ?? "请求失败(\(http.statusCode))"
-        throw ApiError(status: http.statusCode, message: msg, data: dict)
+        guard (200...299).contains(http.statusCode) else {
+            let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let msg = (dict?["error"] as? String) ?? (dict?["message"] as? String) ?? "请求失败(\(http.statusCode))"
+            throw ApiError(status: http.statusCode, message: msg, data: dict)
+        }
+        return data
     }
 }
 
@@ -454,6 +455,28 @@ enum FriendsAPI {
     /// 移除好友(幂等)
     static func remove(_ userId: Int, token: String) async throws {
         let _: Empty = try await APIClient.request("/friends/\(userId)", method: "DELETE", token: token)
+    }
+}
+
+// MARK: - 附件
+enum AttachmentAPI {
+    struct UploadResult: Decodable {
+        let ok: Bool
+        let attId: String
+        let size: Int
+    }
+
+    /// 上傳加密附件
+    static func upload(roomId: String, mimeType: String, data: Data, token: String) async throws -> UploadResult {
+        let path = "/attachments?roomId=\(roomId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&declaredMime=\(mimeType.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+        let bytes = try await APIClient.requestData(path, method: "POST", bodyData: data, contentType: "application/octet-stream", token: token)
+        return try JSONDecoder().decode(UploadResult.self, from: bytes)
+    }
+    
+    /// 下載加密附件
+    static func download(attId: String, token: String) async throws -> Data {
+        let path = "/attachments/\(attId)"
+        return try await APIClient.requestData(path, method: "GET", token: token)
     }
 }
 
