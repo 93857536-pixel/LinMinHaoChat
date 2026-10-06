@@ -26,6 +26,7 @@ final class ChatRoomViewModel: ObservableObject {
     private var readSeq = 0
 
     private let ws = WebSocketClient()
+    let audioPlayer = AVAudioPlayerCache()
 
     init(roomId: String, token: String, identity: DeviceIdentity) {
         self.roomId = roomId

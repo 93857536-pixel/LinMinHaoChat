@@ -104,7 +104,8 @@ struct InviteChatView: View {
                                     onDelete: nil,
                                     onForward: nil,
                                     isStarred: false,
-                                    onStar: {}
+                                    onStar: {},
+                                    onPlayVoice: nil
                                 ).id(msg.id)
                             }
                         }
