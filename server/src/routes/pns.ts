@@ -7,6 +7,7 @@ import { rateLimit, clientIp } from '../ratelimit.js';
 import { signUserJwt } from '../middleware.js';
 import { logger } from '../logger.js';
 import { config } from '../config.js';
+import { generateHandle, sanitizeNickname } from '../handle.js';
 
 const require = createRequire(import.meta.url);
 // 阿里云号码认证服务 SDK(CJS 转译产物,与 channels.ts 同款加载方式)
@@ -89,12 +90,14 @@ pnsRouter.post('/phone-check', async (req, res) => {
     | undefined;
 
   if (!user) {
-    const handleSafe = String(handle || '').replace(/[<>&"']/g, '').slice(0, 32) || `user_${newId().slice(0, 8)}`;
+    // 规范账号 ID:注册时间 + 字母序号(如 202210216pm.A),唯一、不可改
+    const handleAuto = generateHandle(now);
+    const nickname = sanitizeNickname(handle) || handleAuto;
     const info = db.prepare(
-      'INSERT INTO users (phone_hash, email_hash, phone_masked, email_masked, handle, created_at) VALUES (?,?,?,?,?,?)'
-    ).run(th, null, maskPhone(mobile), null, handleSafe, now);
+      'INSERT INTO users (phone_hash, email_hash, phone_masked, email_masked, handle, nickname, created_at) VALUES (?,?,?,?,?,?,?)'
+    ).run(th, null, maskPhone(mobile), null, handleAuto, nickname, now);
     user = { id: Number(info.lastInsertRowid), banned: 0 };
-    logger.info('user_registered_via_pns', { id: user.id, mobile: maskPhone(mobile), ip });
+    logger.info('user_registered_via_pns', { id: user.id, handle: handleAuto, mobile: maskPhone(mobile), ip });
   }
   if (user.banned) return res.status(403).json({ error: 'banned' });
 
@@ -112,7 +115,7 @@ pnsRouter.post('/phone-check', async (req, res) => {
     .run(sessionId, user.id, tokenHash, now, now + SESSION_TTL_MS, String(deviceId || 'default'));
 
   const jwt = await signUserJwt(user.id, String(deviceId || 'default'));
-  const handleDb = (db.prepare('SELECT handle FROM users WHERE id=?').get(user.id) as { handle: string } | undefined)?.handle;
+  const u = db.prepare('SELECT handle, nickname FROM users WHERE id=?').get(user.id) as { handle: string; nickname: string | null } | undefined;
   logger.info('pns_login_ok', { id: user.id, ip });
-  res.json({ ok: true, token: jwt, sessionId, user: { id: user.id, handle: handleDb } });
+  res.json({ ok: true, token: jwt, sessionId, user: { id: user.id, handle: u?.handle, nickname: u?.nickname ?? u?.handle } });
 });

@@ -4,8 +4,9 @@ import { db } from '../db.js';
 import { issueCode, verifyCode, CODE_TTL_MS } from '../otp.js';
 import { isValidPhone, isValidEmail, normalizeEmail, maskPhone, maskEmail, randomToken, newId } from '../crypto-util.js';
 import { rateLimit, clientIp } from '../ratelimit.js';
-import { signUserJwt } from '../middleware.js';
+import { signUserJwt, authRequired } from '../middleware.js';
 import { logger } from '../logger.js';
+import { generateHandle, sanitizeNickname } from '../handle.js';
 
 export const authRouter = Router();
 
@@ -71,19 +72,23 @@ authRouter.post('/register', async (req, res) => {
 
   const now = Date.now();
   if (!user) {
-    const handleSafe = String(handle || '').replace(/[<>&"']/g, '').slice(0, 32) || `user_${newId().slice(0, 8)}`;
+    // 规范账号 ID:注册时间 + 字母序号(如 202210216pm.A),唯一、不可改
+    const handleAuto = generateHandle(now);
+    // 昵称:用户填了就用(可改),否则与账号 ID 相同
+    const nickname = sanitizeNickname(handle) || handleAuto;
     const info = db.prepare(
-      'INSERT INTO users (phone_hash, email_hash, phone_masked, email_masked, handle, created_at) VALUES (?,?,?,?,?,?)'
+      'INSERT INTO users (phone_hash, email_hash, phone_masked, email_masked, handle, nickname, created_at) VALUES (?,?,?,?,?,?,?)'
     ).run(
       type === 'sms' ? th : null,
       type === 'email' ? th : null,
       type === 'sms' ? maskPhone(norm) : null,
       type === 'email' ? maskEmail(norm) : null,
-      handleSafe,
+      handleAuto,
+      nickname,
       now
     );
     user = { id: Number(info.lastInsertRowid), banned: 0 };
-    logger.info('user_registered', { id: user.id, type, target: type === 'sms' ? maskPhone(norm) : maskEmail(norm) });
+    logger.info('user_registered', { id: user.id, type, handle: handleAuto, target: type === 'sms' ? maskPhone(norm) : maskEmail(norm) });
   }
   if (user.banned) return res.status(403).json({ error: 'banned' });
 
@@ -104,8 +109,8 @@ authRouter.post('/register', async (req, res) => {
     .run(sessionId, user.id, tokenHash, now, now + SESSION_TTL_MS, String(deviceId || 'default'));
 
   const jwt = await signUserJwt(user.id, pub?.deviceId || 'default');
-  const dbHandle = (db.prepare('SELECT handle FROM users WHERE id=?').get(user.id) as { handle: string } | undefined)?.handle;
-  res.json({ ok: true, token: jwt, sessionId, user: { id: user.id, handle: dbHandle } });
+  const u = db.prepare('SELECT handle, nickname FROM users WHERE id=?').get(user.id) as { handle: string; nickname: string | null } | undefined;
+  res.json({ ok: true, token: jwt, sessionId, user: { id: user.id, handle: u?.handle, nickname: u?.nickname ?? u?.handle } });
 });
 
 /** 登录(仅验证码,无需密码) */
@@ -148,8 +153,47 @@ authRouter.post('/login', async (req, res) => {
     .run(sessionId, user.id, tokenHash, Date.now(), Date.now() + SESSION_TTL_MS, String(deviceId || 'default'));
 
   const jwt = await signUserJwt(user.id, String(deviceId || 'default'));
-  const handle = (db.prepare('SELECT handle FROM users WHERE id=?').get(user.id) as { handle: string } | undefined)?.handle;
-  res.json({ ok: true, token: jwt, sessionId, user: { id: user.id, handle } });
+  const u = db.prepare('SELECT handle, nickname FROM users WHERE id=?').get(user.id) as { handle: string; nickname: string | null } | undefined;
+  res.json({ ok: true, token: jwt, sessionId, user: { id: user.id, handle: u?.handle, nickname: u?.nickname ?? u?.handle } });
+});
+
+/**
+ * 当前账号资料(供 App 启动时恢复用户名/账号 ID)
+ * GET /api/auth/me → { ok, user: { id, handle, nickname, createdAt } }
+ */
+authRouter.get('/me', authRequired, (req, res) => {
+  const u = db.prepare('SELECT id, handle, nickname, created_at, banned FROM users WHERE id=?').get(req.user!.id) as
+    | { id: number; handle: string | null; nickname: string | null; created_at: number; banned: number }
+    | undefined;
+  if (!u) return res.status(404).json({ error: 'not_found' });
+  if (u.banned) return res.status(403).json({ error: 'banned' });
+  res.json({
+    ok: true,
+    user: {
+      id: u.id,
+      handle: u.handle,
+      nickname: u.nickname ?? u.handle,
+      createdAt: u.created_at,
+    },
+  });
+});
+
+/**
+ * 修改昵称(账号名称)
+ * POST /api/auth/nickname { nickname } — 账号 ID(handle)不可改,仅改显示名
+ */
+authRouter.post('/nickname', authRequired, (req, res) => {
+  const r = rateLimit(`nickname:${req.user!.id}`, 10, 3600_000);
+  if (!r.ok) return res.status(429).json({ error: 'rate_limited', retryAfterSec: r.retryAfterSec });
+
+  const nickname = sanitizeNickname((req.body || {}).nickname);
+  if (nickname.length < 1) return res.status(400).json({ error: 'bad_nickname' });
+  if (nickname.length > 24) return res.status(400).json({ error: 'nickname_too_long' });
+
+  db.prepare('UPDATE users SET nickname=? WHERE id=?').run(nickname, req.user!.id);
+  logger.info('nickname_updated', { id: req.user!.id, nickname });
+  const u = db.prepare('SELECT handle, nickname FROM users WHERE id=?').get(req.user!.id) as { handle: string; nickname: string | null } | undefined;
+  res.json({ ok: true, user: { id: req.user!.id, handle: u?.handle, nickname: u?.nickname ?? nickname } });
 });
 
 /** 登出:作废当前 session */

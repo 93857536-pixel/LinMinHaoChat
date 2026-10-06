@@ -7,6 +7,7 @@ struct MeTab: View {
     @State private var showLogin = false
     @State private var logContent = ""
     @State private var showLogSheet = false
+    @State private var showNicknameEdit = false
     @State private var uploadStatus: UploadStatus = .idle
 
     enum UploadStatus: Equatable {
@@ -26,12 +27,12 @@ struct MeTab: View {
                 Section {
                     if appState.isLoggedIn {
                         HStack(spacing: 16) {
-                            ChatAvatar(label: appState.userHandle ?? "我")
+                            ChatAvatar(label: appState.displayName)
                                 .frame(width: 56, height: 56)
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(appState.userHandle ?? "已登录")
+                                Text(appState.displayName)
                                     .font(.title3.weight(.semibold))
-                                Text("账号 ID \(appState.userId.map(String.init) ?? "—") · 已登录")
+                                Text("账号 ID \(appState.userHandle ?? "—") · 已登录")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
@@ -65,6 +66,20 @@ struct MeTab: View {
                                 .environmentObject(appState)
                         } label: {
                             meRow("账号与安全", icon: "lock.shield", tint: .gray)
+                        }
+                        Button {
+                            showNicknameEdit = true
+                        } label: {
+                            HStack(spacing: 12) {
+                                meIcon("pencil", .blue)
+                                Text("修改账号名称")
+                                Spacer()
+                                Text(appState.displayName)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption).foregroundStyle(.tertiary)
+                            }
                         }
                     } else {
                         Button {
@@ -177,6 +192,10 @@ struct MeTab: View {
             .sheet(isPresented: $showLogSheet) {
                 LogContentView(logContent: logContent)
             }
+            .sheet(isPresented: $showNicknameEdit) {
+                NicknameEditSheet()
+                    .environmentObject(appState)
+            }
         }
     }
 
@@ -241,14 +260,31 @@ struct MeTab: View {
 struct AccountDetail: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    @State private var showNicknameEdit = false
 
     var body: some View {
         List {
-            Section("当前账号") {
-                LabeledContent("用户名", value: appState.userHandle ?? "—")
-                LabeledContent("账号 ID", value: appState.userId.map(String.init) ?? "—")
+            Section {
+                LabeledContent("账号名称", value: appState.displayName)
+                LabeledContent("账号 ID", value: appState.userHandle ?? "—")
                 LabeledContent("设备身份", value: appState.identity?.deviceId ?? "—")
                 LabeledContent("会话", value: appState.sessionId.map { String($0.prefix(8)) + "…" } ?? "—")
+            } header: {
+                Text("当前账号")
+            } footer: {
+                Text("账号 ID 由系统按注册时间自动生成（如 202210216pm.A），全网唯一且不可修改；账号名称可随时更改。")
+            }
+            Section("账号名称") {
+                Button {
+                    showNicknameEdit = true
+                } label: {
+                    HStack {
+                        Image(systemName: "pencil")
+                        Text("修改账号名称")
+                        Spacer()
+                        Text(appState.displayName).foregroundStyle(.secondary)
+                    }
+                }
             }
             Section {
                 Button("退出登录", role: .destructive) {
@@ -259,5 +295,91 @@ struct AccountDetail: View {
         }
         .navigationTitle("账号与安全")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showNicknameEdit) {
+            NicknameEditSheet()
+                .environmentObject(appState)
+        }
+    }
+}
+
+// MARK: - 修改账号名称
+
+struct NicknameEditSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var text = ""
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    TextField("输入新的账号名称", text: $text)
+                        .focused($focused)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onChange(of: text) { _, v in
+                            if v.count > 24 { text = String(v.prefix(24)) }
+                        }
+                } header: {
+                    Text("账号名称")
+                } footer: {
+                    Text("账号名称最多 24 个字符，可随时修改。账号 ID（\(appState.userHandle ?? "—")）由系统自动生成，不可更改。")
+                }
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage).font(.footnote).foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("修改账号名称")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("保存") { Task { await save() } }
+                            .disabled(trimmed.isEmpty || trimmed == appState.displayName)
+                    }
+                }
+            }
+            .onAppear {
+                text = appState.userNickname ?? appState.userHandle ?? ""
+                focused = true
+            }
+        }
+    }
+
+    private var trimmed: String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func save() async {
+        guard let token = appState.authToken else { return }
+        let name = trimmed
+        guard !name.isEmpty else { return }
+        isSaving = true
+        errorMessage = nil
+        defer { isSaving = false }
+        do {
+            let u = try await AuthAPI.updateNickname(name, token: token)
+            appState.userNickname = u.nickname ?? name
+            if let h = u.handle { appState.userHandle = h }
+            UserDefaults.standard.set(appState.userNickname, forKey: "lmh.auth.nickname")
+            dismiss()
+        } catch {
+            if let e = error as? ApiError, e.status == 429 {
+                errorMessage = "修改过于频繁，请稍后再试"
+            } else {
+                errorMessage = "保存失败：\(error.localizedDescription)"
+            }
+        }
     }
 }

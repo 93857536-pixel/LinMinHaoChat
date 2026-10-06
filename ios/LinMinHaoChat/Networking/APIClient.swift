@@ -96,10 +96,22 @@ enum AuthAPI {
     struct SendCodeResult: Decodable { let ok: Bool; let expiresInSec: Int }
     struct AuthResult: Decodable {
         let ok: Bool
-        struct User: Decodable { let id: Int; let handle: String? }
+        struct User: Decodable { let id: Int; let handle: String?; let nickname: String? }
         let user: User
         let token: String
         let sessionId: String
+    }
+
+    /// 账号资料(GET /auth/me)
+    struct ProfileResult: Decodable {
+        let ok: Bool
+        struct User: Decodable {
+            let id: Int
+            let handle: String?
+            let nickname: String?
+            let createdAt: Int64?
+        }
+        let user: User
     }
 
     /// 发送验证码(手机 or 邮箱统一端点)
@@ -128,6 +140,23 @@ enum AuthAPI {
     /// 登出:作废当前 session
     static func logout(sessionId: String, token: String) async throws -> Empty {
         try await APIClient.request("/auth/logout", body: ["sessionId": sessionId], token: token)
+    }
+
+    /// 拉取当前账号资料(启动恢复用户名/账号 ID)
+    static func me(token: String) async throws -> ProfileResult {
+        try await APIClient.request("/auth/me", token: token)
+    }
+
+    /// 修改昵称(账号名称);账号 ID(handle)不可改
+    static func updateNickname(_ nickname: String, token: String) async throws -> AuthResult.User {
+        struct NicknameResult: Decodable {
+            let ok: Bool
+            let user: AuthResult.User
+        }
+        let r: NicknameResult = try await APIClient.request("/auth/nickname",
+                                                            body: ["nickname": nickname],
+                                                            token: token)
+        return r.user
     }
 
     /// 号码认证一键登录(SpToken → GetMobile 换号,server /api/pns/phone-check)

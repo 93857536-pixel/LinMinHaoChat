@@ -330,8 +330,13 @@ struct LoginView: View {
             // 上报本设备公钥,其他设备才能把会话密钥包装给我们
             try await KeysAPI.register(token: r.token)
             appState.saveAuth(token: r.token, sessionId: r.sessionId,
-                              userId: r.user.id, handle: r.user.handle)
-            statusMessage = "\(register ? "注册" : "登录")成功 ✓"
+                              userId: r.user.id, handle: r.user.handle, nickname: r.user.nickname)
+            // 注册成功后明确告知系统分配的规范账号 ID(不可改)
+            if register, let h = r.user.handle {
+                statusMessage = "注册成功 ✓ 账号 ID:\(h)"
+            } else {
+                statusMessage = "\(register ? "注册" : "登录")成功 ✓"
+            }
         } catch {
             if let e = error as? ApiError, e.status == 429 {
                 errorMessage = "请求过于频繁,请稍后再试"
@@ -390,7 +395,7 @@ struct LoginView: View {
                                                      ecdhPub: identity.ecdhPub)
                 try await KeysAPI.register(token: r.token)
                 appState.saveAuth(token: r.token, sessionId: r.sessionId,
-                                  userId: r.user.id, handle: r.user.handle)
+                                  userId: r.user.id, handle: r.user.handle, nickname: r.user.nickname)
                 statusMessage = "一键登录成功 ✓"
                 // 成功后 1.5s 展示提示,再自动退回上一页(首页),免去手动返回
                 Task { @MainActor in

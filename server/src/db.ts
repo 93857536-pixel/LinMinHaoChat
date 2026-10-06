@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   phone_masked  TEXT,
   email_masked  TEXT,
   handle        TEXT,
+  nickname      TEXT,
   created_at    INTEGER NOT NULL,
   banned        INTEGER NOT NULL DEFAULT 0,
   ban_reason    TEXT,
@@ -159,6 +160,12 @@ function migrate(): void {
   if (!cols.some((c) => c.name === 'guest_count')) {
     db.exec('ALTER TABLE temp_rooms ADD COLUMN guest_count INTEGER NOT NULL DEFAULT 0');
     console.log('[db] migrated: temp_rooms.guest_count');
+  }
+  // 用户昵称(可改)与规范账号 ID(handle,注册时自动生成、不可改)分离
+  const userCols = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+  if (!userCols.some((c) => c.name === 'nickname')) {
+    db.exec('ALTER TABLE users ADD COLUMN nickname TEXT');
+    console.log('[db] migrated: users.nickname');
   }
   // 云端 E2EE 备份文件表
   db.exec(`

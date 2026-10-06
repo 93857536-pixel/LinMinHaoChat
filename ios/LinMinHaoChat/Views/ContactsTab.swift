@@ -23,11 +23,11 @@ struct ContactsTab: View {
                             MeAccountView()
                         } label: {
                             HStack(spacing: 12) {
-                                ChatAvatar(label: appState.userHandle ?? "我", isGroup: false)
+                                ChatAvatar(label: appState.displayName, isGroup: false)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(appState.userHandle ?? "已登录")
+                                    Text(appState.displayName)
                                         .font(.body)
-                                    Text("账号 \(appState.userId.map(String.init) ?? "—")")
+                                    Text("账号 \(appState.userHandle ?? "—")")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -218,12 +218,12 @@ struct MeAccountView: View {
         List {
             Section {
                 HStack(spacing: 16) {
-                    ChatAvatar(label: appState.userHandle ?? "我")
+                    ChatAvatar(label: appState.displayName)
                         .frame(width: 56, height: 56)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(appState.userHandle ?? "未登录")
+                        Text(appState.isLoggedIn ? appState.displayName : "未登录")
                             .font(.title3.weight(.semibold))
-                        Text(appState.isLoggedIn ? "账号 ID \(appState.userId.map(String.init) ?? "—")" : "尚未登录")
+                        Text(appState.isLoggedIn ? "账号 ID \(appState.userHandle ?? "—")" : "尚未登录")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }

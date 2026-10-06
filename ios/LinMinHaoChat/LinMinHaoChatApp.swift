@@ -24,7 +24,7 @@ struct LinMinHaoChatApp: App {
 
     private func handleLink(_ url: URL) {
         let jwt = AppState.shared.authToken
-        let nickname = AppState.shared.userHandle
+        let nickname = AppState.shared.displayName
         if let req = InviteLinkParser.parse(url: url, jwt: jwt, nickname: nickname) {
             inviteSession.pending = req
         }
