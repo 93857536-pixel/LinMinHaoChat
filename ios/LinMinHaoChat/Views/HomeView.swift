@@ -46,6 +46,17 @@ struct HomeView: View {
                 .controlSize(.large)
 
                 NavigationLink {
+                    ChatListView()
+                } label: {
+                    Label(appState.isLoggedIn ? "账号聊天" : "账号聊天(请先登录)", systemImage: "bubble.left.and.bubble.right")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(!appState.isLoggedIn)
+
+                NavigationLink {
                     LoginView(preferRegister: false)
                 } label: {
                     Label(appState.isLoggedIn ? "账号(已登录)" : "登录", systemImage: "person.crop.circle")

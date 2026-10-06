@@ -1,7 +1,29 @@
 import CryptoKit
 import Foundation
 
-/// 临时聊天消息(服务器存储形态,密文)
+// MARK: - 设备身份标识
+struct DeviceIdentity {
+    let deviceId: String
+    let ed25519Pub: String
+    let ecdhPub: String
+}
+
+// MARK: - 账号聊天会话模型
+struct ChatRoomSession: Identifiable {
+    let id: String  // roomId
+    let roomId: String
+    let token: String
+    let identity: DeviceIdentity
+}
+
+// MARK: - 身份与密钥管理
+struct WrappedKeyEntry: Encodable {
+    let userId: Int
+    let deviceId: String
+    let wrappedKey: String
+}
+
+// MARK: - 临时聊天消息(服务器存储形态，密文)
 struct TempMsg: Decodable {
     let id: String
     let seq: Int
@@ -13,7 +35,7 @@ struct TempMsg: Decodable {
     let cipher: String
 }
 
-/// 账号聊天消息(服务器存储形态,密文)
+// MARK: - 账号聊天消息(服务器存储形态，密文)
 struct ChatMsg: Decodable {
     let id: String
     let seq: Int
@@ -26,8 +48,8 @@ struct ChatMsg: Decodable {
     let cipher: String
 }
 
-/// 房间元数据(账号聊天)
-struct RoomMeta: Decodable {
+// MARK: - 房间元数据(账号聊天)
+struct RoomMeta: Decodable, Identifiable {
     let id: String
     let type: String          // dm | group
     let nameEnc: String?
@@ -37,7 +59,7 @@ struct RoomMeta: Decodable {
     let lastSeq: Int
 }
 
-/// 解密后的展示消息
+// MARK: - 解密后的展示消息
 struct DecryptedMsg: Identifiable, Equatable {
     let id: String
     let seq: Int
@@ -46,9 +68,40 @@ struct DecryptedMsg: Identifiable, Equatable {
     let text: String
     let ts: Int64
     let kind: String       // msg | attachment
+    var att: AttachmentInfo?
+    
+    struct AttachmentInfo: Equatable {
+        let attId: String
+        let name: String
+        let size: Int
+        let mime: String
+    }
+    
+    static func == (lhs: DecryptedMsg, rhs: DecryptedMsg) -> Bool {
+        lhs.id == rhs.id && lhs.seq == rhs.seq
+    }
 }
 
-/// 临时聊天会话上下文
+// MARK: - 访客标签工具
+enum LabelUtil {
+    static func label(for anonId: String?) -> String {
+        guard let a = anonId, !a.isEmpty else { return "访客" }
+        if a.hasPrefix("g"), let n = Int(a.dropFirst()) {
+            return String(format: "访客%03d", n)
+        }
+        if a.hasPrefix("u"), let n = Int(a.dropFirst()) {
+            return "账号\(n)"
+        }
+        // 确定性散列:与 web 相同算法
+        var h: UInt32 = 0
+        for byte in a.utf8 {
+            h = h &* 31 &+ UInt32(byte)
+        }
+        return "访客\(100 + Int(h % 900))"
+    }
+}
+
+// MARK: - 临时聊天会话模型
 struct TempRoomSession: Hashable {
     let roomId: String
     let sessionKey: SymmetricKey
@@ -66,35 +119,23 @@ struct TempRoomSession: Hashable {
     }
 }
 
-/// 访客标签 —— 与 web labelFor 完全一致:
-/// g{n}→访客NNN(3位补零)、u{n}→账号N、旧随机串→确定性散列(100+h%900)
-enum LabelUtil {
-    static func label(for anonId: String?) -> String {
-        guard let a = anonId, !a.isEmpty else { return "访客" }
-        if a.hasPrefix("g"), let n = Int(a.dropFirst()) {
-            return String(format: "访客%03d", n)
-        }
-        if a.hasPrefix("u"), let n = Int(a.dropFirst()) {
-            return "账号\(n)"
-        }
-        // 确定性散列:与 web 相同算法 h = h*31 + charCode, >>> 0
-        var h: UInt32 = 0
-        for byte in a.utf8 {
-            h = h &* 31 &+ UInt32(byte)
-        }
-        return "访客\(100 + Int(h % 900))"
-    }
-}
-
-/// 时间工具
+// MARK: - 时间工具
 enum TimeUtil {
-    /// 毫秒时间戳(与 web Date.now() 对齐)
     static var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
-
+    
     static func formatTime(_ ms: Int64) -> String {
         let d = Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
         return f.string(from: d)
+    }
+    
+    static func formatRelative(_ ms: Int64) -> String {
+        let now = nowMs
+        let diff = now - ms
+        if diff < 60_000 { return "刚刚" }
+        if diff < 3600_000 { return "\(Int(diff / 60_000))分钟前" }
+        if diff < 86400_000 { return "\(Int(diff / 3600_000))小时前" }
+        return "\(Int(diff / 86400_000))天前"
     }
 }

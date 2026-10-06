@@ -49,7 +49,7 @@ struct TempRoomView: View {
         }
         .navigationTitle("临时聊天")
         .navigationDestination(item: $activeSession) { session in
-            ChatView(session: session)
+            TempChatView(session: session)
         }
     }
 

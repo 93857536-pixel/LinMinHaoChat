@@ -29,8 +29,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.linminhao.chat
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1"
-        MARKETING_VERSION: "1.4"
-        CURRENT_PROJECT_VERSION: "3"
+        MARKETING_VERSION: "1.5"
+        CURRENT_PROJECT_VERSION: "4"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         # 个人免费签名(lin_min_hao@icloud.com, team 4B7F8BR8R4 "MH L (Personal Team)")
@@ -46,8 +46,8 @@ targets:
       path: LinMinHaoChat/Info.plist
       properties:
         CFBundleDisplayName: LinMinHao Chat
-        CFBundleShortVersionString: "1.4"
-        CFBundleVersion: "3"
+        CFBundleShortVersionString: "1.5"
+        CFBundleVersion: "4"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

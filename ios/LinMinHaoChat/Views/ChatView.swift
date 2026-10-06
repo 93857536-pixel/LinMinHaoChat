@@ -1,26 +1,27 @@
 import SwiftUI
 
-/// 聊天界面 —— 强制隐私模式:
-/// - 不显示任何水印
-/// - 本地解密后展示,服务器只有密文
-/// - 进入后台由 RootView 盖隐私模糊层
+// MARK: - 账号聊天视图
+
 struct ChatView: View {
-    let session: TempRoomSession
-
-    @StateObject private var viewModel: TempChatViewModel
+    let session: ChatRoomSession
+    
+    @StateObject private var viewModel: ChatRoomViewModel
     @State private var inputText = ""
-    @State private var showShareSheet = false
-    @State private var didAutoShare = false
+    @State private var errorMessage: String?
     @FocusState private var inputFocused: Bool
-
-    init(session: TempRoomSession) {
+    
+    init(session: ChatRoomSession) {
         self.session = session
-        _viewModel = StateObject(wrappedValue: TempChatViewModel(roomId: session.roomId, sessionKey: session.sessionKey))
+        _viewModel = StateObject(wrappedValue: ChatRoomViewModel(
+            roomId: session.roomId,
+            token: session.token,
+            identity: session.identity
+        ))
     }
-
+    
     var body: some View {
         VStack(spacing: 0) {
-            // 状态栏(顶部)
+            // 状态栏
             HStack(spacing: 6) {
                 Circle()
                     .fill(viewModel.isReady ? Color.green : Color.orange)
@@ -33,52 +34,26 @@ struct ChatView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Button {
-                    showShareSheet = true
-                } label: {
-                    Label("分享链接", systemImage: "square.and.arrow.up")
-                        .font(.caption)
-                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(.bar)
-
+            
             Divider()
-
-            // 消息列表:为空时给创建者显示醒目的分享邀请卡片
+            
+            // 消息列表
             if viewModel.messages.isEmpty {
                 VStack(spacing: 14) {
-                    Image(systemName: "square.and.arrow.up.circle.fill")
+                    Image(systemName: "lock.shield.fill")
                         .font(.system(size: 44))
                         .foregroundStyle(Color.accentColor)
-                    Text("把链接发给朋友,加入加密聊天")
+                    Text("端到端加密会话已建立")
                         .font(.headline)
-                    Text(shareURL)
-                        .font(.caption2)
+                    Text("只有成员能读取消息内容")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
                         .multilineTextAlignment(.center)
-                        .lineLimit(3)
                         .padding(.horizontal, 20)
-                    HStack(spacing: 12) {
-                        Button {
-                            UIPasteboard.general.string = shareURL
-                        } label: {
-                            Label("复制链接", systemImage: "doc.on.doc")
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                        }
-                        .buttonStyle(.bordered)
-
-                        ShareLink(item: shareURL) {
-                            Label("发送", systemImage: "square.and.arrow.up")
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .padding(.horizontal, 24)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.bottom, 40)
@@ -103,9 +78,9 @@ struct ChatView: View {
                     }
                 }
             }
-
+            
             Divider()
-
+            
             // 输入栏
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("加密消息", text: $inputText, axis: .vertical)
@@ -114,7 +89,7 @@ struct ChatView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 18))
-
+                
                 Button {
                     let text = inputText
                     inputText = ""
@@ -134,69 +109,26 @@ struct ChatView: View {
         .navigationTitle("加密聊天")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.start() }
-        .onAppear {
-            // 创建者进入房间后自动弹出分享面板,方便立即把链接发给朋友
-            guard session.isCreator, !didAutoShare else { return }
-            didAutoShare = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                showShareSheet = true
-            }
-        }
         .onDisappear { viewModel.leave() }
-        .sheet(isPresented: $showShareSheet) {
-            ShareSheetView(link: shareURL)
+        .alert("错误", isPresented: .constant(errorMessage != nil)) {
+            Button("确定") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
         }
-    }
-
-    private var shareURL: String {
-        SessionKeyUtil.shareUrl(roomId: session.roomId, key: session.sessionKey)
-    }
-}
-
-/// 分享链接面板:显示完整链接 + 复制 + 系统分享
-struct ShareSheetView: View {
-    let link: String
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Text("把链接发给朋友,加入加密聊天")
-                .font(.headline)
-            Text(link)
-                .font(.caption)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 12))
-            HStack(spacing: 12) {
-                Button {
-                    UIPasteboard.general.string = link
-                    dismiss()
-                } label: {
-                    Label("复制链接", systemImage: "doc.on.doc")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.bordered)
-
-                ShareLink(item: link) {
-                    Label("发送", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.borderedProminent)
+        .onChange(of: viewModel.errorMessage) { _, msg in
+            if let msg = msg, !msg.isEmpty {
+                errorMessage = msg
+                viewModel.errorMessage = nil
             }
-            Spacer()
         }
-        .padding(20)
-        .presentationDetents([.medium])
     }
 }
 
-/// 单条消息气泡(无水印设计;自己靠右、他人靠左)
+// MARK: - 消息气泡
+
 struct MessageBubbleView: View {
     let msg: DecryptedMsg
-
+    
     var body: some View {
         HStack {
             if msg.mine { Spacer(minLength: 60) }
@@ -206,20 +138,47 @@ struct MessageBubbleView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                Text(msg.text)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        msg.mine ? Color.accentColor.opacity(0.9) : Color(.systemGray6),
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    )
-                    .foregroundStyle(msg.mine ? .white : .primary)
-                    .textSelection(.enabled)
-                Text(TimeUtil.formatTime(msg.ts))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                
+                if let att = msg.att {
+                    attachmentView(att)
+                } else {
+                    Text(msg.text)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            msg.mine ? Color.accentColor.opacity(0.9) : Color(.systemGray6),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        )
+                        .foregroundStyle(msg.mine ? .white : .primary)
+                        .textSelection(.enabled)
+                }
+                
+                HStack(spacing: 4) {
+                    Text(TimeUtil.formatTime(msg.ts))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
             if !msg.mine { Spacer(minLength: 60) }
         }
+    }
+    
+    private func attachmentView(_ att: DecryptedMsg.AttachmentInfo) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Image(systemName: "doc.fill")
+                    .foregroundStyle(.secondary)
+                Text(att.name)
+                    .font(.caption)
+                Spacer()
+                Text("\(att.size > 1024 ? "\(Int(att.size/1024))KB" : "\(att.size)B")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .foregroundStyle(.primary)
     }
 }
