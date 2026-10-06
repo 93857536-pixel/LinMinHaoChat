@@ -1,15 +1,15 @@
 import SwiftUI
 
 // MARK: - 账号聊天视图
-
 struct ChatView: View {
     let session: ChatRoomSession
-    
+
     @StateObject private var viewModel: ChatRoomViewModel
     @State private var inputText = ""
     @State private var errorMessage: String?
     @FocusState private var inputFocused: Bool
-    
+    @State private var copiedMsgId: String?
+
     init(session: ChatRoomSession) {
         self.session = session
         _viewModel = StateObject(wrappedValue: ChatRoomViewModel(
@@ -18,7 +18,7 @@ struct ChatView: View {
             identity: session.identity
         ))
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // 状态栏
@@ -38,9 +38,9 @@ struct ChatView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(.bar)
-            
+
             Divider()
-            
+
             // 消息列表
             if viewModel.messages.isEmpty {
                 VStack(spacing: 14) {
@@ -61,10 +61,7 @@ struct ChatView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 10) {
-                            ForEach(viewModel.messages) { msg in
-                                MessageBubbleView(msg: msg)
-                                    .id(msg.id)
-                            }
+                            messageBubbles
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
@@ -78,16 +75,16 @@ struct ChatView: View {
                     }
                 }
             }
-            
+
             Divider()
-            
+
             // 输入栏
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("加密消息", text: $inputText, axis: .vertical)
                     .lineLimit(1...5)
                     .focused($inputFocused)
                     .lmhChatInputBubble()
-                
+
                 Button {
                     let text = inputText
                     inputText = ""
@@ -119,14 +116,69 @@ struct ChatView: View {
                 viewModel.errorMessage = nil
             }
         }
+        .toast(message: "已复制", show: copiedMsgId != nil)
+        .onChange(of: copiedMsgId) { _, id in
+            if id != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    copiedMsgId = nil
+                }
+            }
+        }
+    }
+
+    private var messageBubbles: some View {
+        ForEach(viewModel.messages) { msg in
+            MessageBubbleView(
+                msg: msg,
+                onCopy: { copyToClipboard(msg.text) },
+                onDelete: viewModel.messages.contains(where: { $0.id == msg.id }) ? { viewModel.deleteMessage(msg.id) } : nil
+            )
+            .id(msg.id)
+        }
+    }
+
+    private func copyToClipboard(_ text: String) {
+        UIPasteboard.general.string = text
+        copiedMsgId = "copied"
+    }
+}
+
+// MARK: - Toast 辅助
+struct ToastModifier: ViewModifier {
+    let message: String
+    let show: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if show {
+                    Text(message)
+                        .font(.caption)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color(.systemBackground).opacity(0.95))
+                        .cornerRadius(8)
+                        .shadow(radius: 4)
+                        .transition(.opacity)
+                        .animation(.easeInOut, value: show)
+                        .position(x: UIScreen.main.bounds.width / 2, y: UIScreen.main.bounds.height / 2)
+                }
+            }
+    }
+}
+
+extension View {
+    func toast(message: String, show: Bool) -> some View {
+        modifier(ToastModifier(message: message, show: show))
     }
 }
 
 // MARK: - 消息气泡
-
 struct MessageBubbleView: View {
     let msg: DecryptedMsg
-    
+    let onCopy: () -> Void
+    let onDelete: (() -> Void)?
+
     var body: some View {
         HStack {
             if msg.mine { Spacer(minLength: 60) }
@@ -136,7 +188,7 @@ struct MessageBubbleView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                
+
                 if let att = msg.att {
                     attachmentView(att)
                 } else {
@@ -150,17 +202,36 @@ struct MessageBubbleView: View {
                         .foregroundStyle(msg.mine ? .white : .primary)
                         .textSelection(.enabled)
                 }
-                
+
                 HStack(spacing: 4) {
                     Text(TimeUtil.formatTime(msg.ts))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
+                    if msg.mine {
+                        Image(systemName: msg.isRead ? "checkmark.circle.fill" : "circle")
+                            .font(.caption2)
+                            .foregroundStyle(msg.isRead ? Color.accentColor : Color.secondary)
+                    }
+                }
+            }
+            .contextMenu {
+                if msg.text.count > 0 {
+                    Button { onCopy() } label: {
+                        Label("复制", systemImage: "doc.on.doc")
+                    }
+                }
+                if msg.mine {
+                    if let onDelete = onDelete {
+                        Button(role: .destructive) { onDelete() } label: {
+                            Label("删除", systemImage: "trash")
+                        }
+                    }
                 }
             }
             if !msg.mine { Spacer(minLength: 60) }
         }
     }
-    
+
     private func attachmentView(_ att: DecryptedMsg.AttachmentInfo) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {

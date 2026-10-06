@@ -15,9 +15,16 @@ struct WsFrame: Decodable {
     let serverTime: Int64?
     let t: Int64?
     let error: String?
+    /// read 帧:reader 的 userId
+    let userId: Int?
+    /// read 帧:已读到的最新 seq
+    let lastSeq: Int?
+    /// 消息文本(当 kind=msg 且有 plainText 时直接展示,跳过解密)
+    let plainText: String?
 
     private enum CodingKeys: String, CodingKey {
         case type, roomId, seq, id, senderId, anonId, ts, kind, onlineIps, online, serverTime, t, error
+        case userId, lastSeq, plainText
     }
 
     /// online 可能是 [number] 或 [string],统一转成 [String]
@@ -36,6 +43,9 @@ struct WsFrame: Decodable {
         serverTime = try c.decodeIfPresent(Int64.self, forKey: .serverTime)
         t = try c.decodeIfPresent(Int64.self, forKey: .t)
         error = try c.decodeIfPresent(String.self, forKey: .error)
+        userId = try c.decodeIfPresent(Int.self, forKey: .userId)
+        lastSeq = try c.decodeIfPresent(Int.self, forKey: .lastSeq)
+        plainText = try c.decodeIfPresent(String.self, forKey: .plainText)
     }
 
     private static func decodeOnline(from c: KeyedDecodingContainer<CodingKeys>) -> [String]? {

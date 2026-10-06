@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import SwiftUI
 
 /// 账号聊天逻辑 —— 与 web Chat.tsx 行为对齐:
 /// 拉密钥包(我的设备)→ ECDH 解包会话密钥 → 拉历史 → WS(jwt)订阅房间 → 发消息(seq 冲突自愈)
@@ -18,6 +19,8 @@ final class ChatRoomViewModel: ObservableObject {
     private var lastSeq = 0
     private var sending = false
     private var hasConnectedBefore = false
+    /// 服务端上报的该用户已读到的最高 seq(0 = 未知)
+    private var readSeq = 0
 
     private let ws = WebSocketClient()
 
@@ -194,7 +197,16 @@ final class ChatRoomViewModel: ObservableObject {
         case "presence":
             onlineIps = frame.onlineIps
         case "read":
-            break
+            // 服务端推送的 read 帧:userId 是 reader,userId=me 且 lastSeq>= 我的最后 seq 时,把本机所有 mine 消息标为已读
+            if let readerId = frame.userId, let lastSeq = frame.lastSeq, readerId == AppState.shared.userId {
+                self.readSeq = lastSeq
+                // 刷新列表中 mine 消息的 isRead 状态
+                messages = messages.map { m in
+                    var mm = m
+                    if mm.mine && m.seq <= lastSeq { mm.isRead = true }
+                    return mm
+                }
+            }
         case "subscribed":
             statusText = "已连接 · 端到端加密"
         case "error":
@@ -236,6 +248,11 @@ final class ChatRoomViewModel: ObservableObject {
         } catch {
             errorMessage = "发送失败:\(error.localizedDescription)"
         }
+    }
+
+    // MARK: - 删除单条消息(仅本地,服务器不删)
+    func deleteMessage(_ msgId: String) {
+        messages.removeAll { $0.id == msgId }
     }
 
     // MARK: - 列表预览(本地缓存,不上传;进入/离开聊天通知列表刷新未读)

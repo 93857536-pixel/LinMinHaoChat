@@ -69,6 +69,8 @@ struct DecryptedMsg: Identifiable, Equatable {
     let ts: Int64
     let kind: String       // msg | attachment
     var att: AttachmentInfo?
+    var isRead: Bool = false
+
     
     struct AttachmentInfo: Equatable {
         let attId: String

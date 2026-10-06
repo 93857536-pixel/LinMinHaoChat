@@ -98,7 +98,11 @@ struct InviteChatView: View {
                     ScrollView {
                         LazyVStack(spacing: 10) {
                             ForEach(viewModel.messages) { msg in
-                                MessageBubbleView(msg: msg).id(msg.id)
+                                MessageBubbleView(
+                                    msg: msg,
+                                    onCopy: { UIPasteboard.general.string = msg.text },
+                                    onDelete: nil
+                                ).id(msg.id)
                             }
                         }
                         .padding(.horizontal, 12).padding(.vertical, 10)
