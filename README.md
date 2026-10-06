@@ -1,9 +1,9 @@
-# LinMinHao Chat · iOS
+# LinMinHao Chat · iOS / Android
 
 端到端加密(E2EE)聊天 App —— iOS 原生版(SwiftUI + CryptoKit + Keychain)。
 
-> 本仓库**不包含源代码**,只提供可直接安装使用的**未签名 IPA** 安装包。
-> 安装需借助第三方签名工具(全能签 / ESign / SideStore 等),见下方说明。
+> 本仓库**不包含源代码**,只提供可直接安装使用的安装包:iOS **未签名 IPA** + Android **APK**。
+> iOS 需第三方签名工具(全能签 / ESign / SideStore 等)安装;Android 直接安装 APK 即可。
 
 ## 功能
 
@@ -17,7 +17,8 @@
 
 前往 [Releases](https://github.com/93857536-pixel/LinMinHaoChat/releases) 下载最新安装包:
 
-- `LinMinHaoChat-unsigned-v1.9.13.ipa` — **未签名** IPA(iPhone arm64,iOS 17.0+)
+- `LinMinHaoChat-unsigned-v1.9.13.ipa` — **iOS** 未签名 IPA(iPhone arm64,iOS 17.0+)
+- `LinMinHaoChat-android-v1.9.13.apk` — **Android** APK(Android 12 / API 31 及以上,已签名,直接安装)
 
 ## 安装方法(未签名 IPA)
 
@@ -32,6 +33,18 @@
 4. 打开 App,按提示验证即可
 
 > 免费个人签名 7 天过期,重新签名一遍即可,账号数据保存在服务端,不受影响。
+
+## 安装方法(Android APK)
+
+1. 手机下载 `LinMinHaoChat-android-v1.9.13.apk`
+2. 点击安装;若提示「未知来源应用」,在系统设置里允许该文件管理器安装应用即可
+3. 要求 **Android 12(API 31)及以上**。安装包已用固定证书签名,后续版本可直接覆盖升级
+
+## 与 iOS 端互通
+
+同一账号可在 **iOS / Android / Web** 之间互发消息 —— 各端使用同一套端到端加密协议
+(ECDH P-256 + AES-256-GCM,私钥只存本机 Keychain/IndexedDB,服务器仅存密文)。
+Android 端为 Capacitor 壳 + 与 Web 端**同一份**加密实现,因此互通性由代码同源保证。
 
 ## 服务端
 
