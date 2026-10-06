@@ -135,8 +135,46 @@ chatRouter.post('/rooms/:id/add-member', (req, res) => {
   if (!Number.isInteger(uid) || uid <= 0) return res.status(400).json({ error: 'bad_user' });
   const exists = db.prepare('SELECT 1 FROM users WHERE id=?').get(uid);
   if (!exists) return res.status(404).json({ error: 'user_not_found' });
+  // 仅创建者可添加成员
+  const room = db.prepare('SELECT created_by FROM rooms WHERE id=?').get(roomId) as { created_by: number } | undefined;
+  if (!room || room.created_by !== req.user!.id) return res.status(403).json({ error: 'not_creator' });
+  const existing = db.prepare('SELECT 1 FROM room_members WHERE room_id=? AND user_id=?').get(roomId, uid);
+  if (existing) return res.status(409).json({ error: 'already_member' });
   db.prepare('INSERT OR IGNORE INTO room_members (room_id, user_id, joined_at) VALUES (?,?,?)').run(roomId, uid, Date.now());
   logger.info('room_member_added', { roomId, userId: uid, by: req.user!.id });
+  res.json({ ok: true });
+});
+
+/** 获取房间成员列表(仅创建者可管理) */
+chatRouter.get('/rooms/:id/members', (req, res) => {
+  const roomId = String(req.params.id);
+  if (!isMember(roomId, req.user!.id)) return res.status(404).json({ error: 'not_found' });
+  const room = db.prepare('SELECT created_by FROM rooms WHERE id=?').get(roomId) as { created_by: number } | undefined;
+  if (!room) return res.status(404).json({ error: 'not_found' });
+  // 仅创建者可见完整成员列表
+  const isCreator = room.created_by === req.user!.id;
+  const rows = db.prepare('SELECT rm.user_id, u.handle, rm.joined_at FROM room_members rm JOIN users u ON u.id = rm.user_id WHERE rm.room_id=? ORDER BY rm.joined_at ASC').all(roomId) as { user_id: number; handle: string; joined_at: number }[];
+  const members = rows.map(r => ({
+    userId: r.user_id,
+    handle: isCreator ? r.handle : null,
+    joinedAt: r.joined_at,
+    isCreator: r.user_id === room.created_by
+  }));
+  res.json({ ok: true, members, isCreator });
+});
+
+/** 移除成员(仅创建者可操作) */
+chatRouter.delete('/rooms/:id/members/:userId', (req, res) => {
+  const roomId = String(req.params.id);
+  const targetId = Number(req.params.userId);
+  if (!isMember(roomId, req.user!.id)) return res.status(404).json({ error: 'not_found' });
+  const room = db.prepare('SELECT created_by FROM rooms WHERE id=?').get(roomId) as { created_by: number } | undefined;
+  if (!room || room.created_by !== req.user!.id) return res.status(403).json({ error: 'not_creator' });
+  if (targetId === req.user!.id) return res.status(400).json({ error: 'cannot_remove_self' });
+  const result = db.prepare('DELETE FROM room_members WHERE room_id=? AND user_id=?').run(roomId, targetId);
+  if (result.changes === 0) return res.status(404).json({ error: 'member_not_found' });
+  db.prepare('DELETE FROM room_keys WHERE room_id=? AND member_user_id=?').run(roomId, targetId);
+  logger.info('room_member_removed', { roomId, userId: targetId, by: req.user!.id });
   res.json({ ok: true });
 });
 
@@ -329,3 +367,16 @@ chatRouter.get('/starred', (req, res) => {
 type OnlineFn = (roomId: string) => number[];
 let onlineMembers: OnlineFn = () => [];
 export function setOnlineMembers(fn: OnlineFn) { onlineMembers = fn; }
+
+/** 退出房间 */
+chatRouter.post('/rooms/:id/leave', (req, res) => {
+  const roomId = String(req.params.id);
+  if (!isMember(roomId, req.user!.id)) return res.status(404).json({ error: 'not_found' });
+  const room = db.prepare('SELECT created_by FROM rooms WHERE id=?').get(roomId) as { created_by: number } | undefined;
+  if (room && room.created_by === req.user!.id) return res.status(400).json({ error: 'creator_cannot_leave' });
+  const result = db.prepare('DELETE FROM room_members WHERE room_id=? AND user_id=?').run(roomId, req.user!.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'member_not_found' });
+  db.prepare('DELETE FROM room_keys WHERE room_id=? AND member_user_id=?').run(roomId, req.user!.id);
+  logger.info('room_left', { roomId, userId: req.user!.id });
+  res.json({ ok: true });
+});

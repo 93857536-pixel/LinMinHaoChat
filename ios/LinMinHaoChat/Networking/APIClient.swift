@@ -322,6 +322,27 @@ enum ChatAPI {
         try await APIClient.request("/chat/rooms/\(roomId)/add-member", body: ["userId": userId], token: token)
     }
 
+    /// 获取房间成员列表
+    struct MemberInfo: Decodable {
+        let userId: Int
+        let handle: String?
+        let joinedAt: Int64
+        let isCreator: Bool
+    }
+    struct MembersResult: Decodable {
+        let ok: Bool
+        let members: [MemberInfo]
+        let isCreator: Bool
+    }
+    static func getMembers(_ roomId: String, token: String) async throws -> MembersResult {
+        try await APIClient.request("/chat/rooms/\(roomId)/members", token: token)
+    }
+
+    /// 移除成员(仅创建者可操作)
+    static func removeMember(_ roomId: String, userId: Int, token: String) async throws -> Empty {
+        try await APIClient.request("/chat/rooms/\(roomId)/members/\(userId)", method: "DELETE", token: token)
+    }
+
     /// 发送密文消息
     static func send(_ roomId: String, iv: String, cipher: String, seq: Int, ts: Int64, kind: String, meta: String? = nil, token: String) async throws -> SendResult {
         var body: [String: Any] = ["iv": iv, "cipher": cipher, "seq": seq, "ts": ts, "kind": kind]
@@ -361,6 +382,11 @@ enum ChatAPI {
         body["ts"] = Int64(Date().timeIntervalSince1970 * 1000)
         let result: SendResult = try await APIClient.request("/chat/rooms/\(targetRoomId)/forward", body: body, token: token)
         return result
+    }
+
+    /// 退出房间
+    static func leaveRoom(_ roomId: String, token: String) async throws -> Empty {
+        try await APIClient.request("/chat/rooms/\(roomId)/leave", method: "POST", token: token)
     }
 }
 
