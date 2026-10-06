@@ -117,6 +117,13 @@ CREATE TABLE IF NOT EXISTS admin_audit (
   action TEXT NOT NULL,
   detail TEXT
 );
+CREATE TABLE IF NOT EXISTS friendships (
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  friend_id  INTEGER NOT NULL REFERENCES users(id),
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, friend_id)
+);
+CREATE INDEX IF NOT EXISTS idx_friendships_user ON friendships(user_id);
 `);
 
 /** 服务器重启后校验数据目录可写(快速自检) */

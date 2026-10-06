@@ -1,11 +1,15 @@
 import SwiftUI
 
-/// 通讯录 Tab —— 我的账号 + 常用联系人(本机) + 发起聊天入口。
-/// 服务器无好友系统,这里"常用联系人"仅存本机(不上传),作为发起私聊的快捷入口。
+/// 通讯录 Tab —— 服务端好友系统为主,本机常用联系人为辅。
+/// 未登录:仅本机联系人与发起聊天;已登录:多「我的好友」「查找」入口。
 struct ContactsTab: View {
     @EnvironmentObject private var appState: AppState
     @ObservedObject private var store = CommonContactsStore.shared
-    @State private var showAddContact = false
+
+    @State private var friends: [FriendsAPI.Friend] = []
+    @State private var loadingFriends = false
+    @State private var findQuery: String?
+    @State private var showFindFriends = false
     @State private var dmPrefill = ""
     @State private var showNewDM = false
 
@@ -13,8 +17,11 @@ struct ContactsTab: View {
         NavigationStack {
             List {
                 if appState.isLoggedIn {
-                    Section {
-                        NavigationLink(value: "self") {
+                    // 我的账号
+                    Section("我的账号") {
+                        NavigationLink {
+                            MeAccountView()
+                        } label: {
                             HStack(spacing: 12) {
                                 ChatAvatar(label: appState.userHandle ?? "我", isGroup: false)
                                 VStack(alignment: .leading, spacing: 2) {
@@ -26,44 +33,54 @@ struct ContactsTab: View {
                                 }
                             }
                         }
-                    } header: {
-                        Text("我的账号")
+                    }
+
+                    // 服务端好友(数据源 = /api/friends)
+                    Section("我的好友") {
+                        if loadingFriends {
+                            HStack { Spacer(); ProgressView(); Spacer() }
+                        } else if friends.isEmpty {
+                            HStack {
+                                Text("还没有好友,点右上角「+ → 查找」添加")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                            }
+                        }
+                        ForEach(friends) { f in
+                            friendRow(f)
+                        }
+                        .onDelete { deleteFriends(at: $0) }
                     }
                 }
 
-                Section("常用联系人") {
-                    if store.contacts.isEmpty {
-                        HStack {
-                            Text("还没有常用联系人")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    ForEach(store.contacts) { c in
-                        HStack(spacing: 12) {
-                            ChatAvatar(label: c.name, isGroup: false)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(c.name)
-                                Text("ID \(c.userId)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Menu {
-                                Button("发起聊天") {
-                                    dmPrefill = String(c.userId)
-                                    showNewDM = true
+                // 本机常用联系人(离线可用,仅本机存储)
+                if !store.contacts.isEmpty {
+                    Section("常用联系人(本机)") {
+                        ForEach(store.contacts) { c in
+                            HStack(spacing: 12) {
+                                ChatAvatar(label: c.name, isGroup: false)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(c.name)
+                                    Text("ID \(c.userId)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
-                                .disabled(!appState.isLoggedIn)
-                                Button("删除", role: .destructive) { store.remove(c) }
-                            } label: {
-                                Image(systemName: "ellipsis")
+                                Spacer()
+                                Menu {
+                                    Button("发起聊天") {
+                                        dmPrefill = String(c.userId)
+                                        showNewDM = true
+                                    }
+                                    .disabled(!appState.isLoggedIn)
+                                    Button("删除", role: .destructive) { store.remove(c) }
+                                } label: {
+                                    Image(systemName: "ellipsis")
+                                }
                             }
                         }
+                        .onDelete { store.remove(at: $0) }
                     }
-                    .onDelete { store.remove(at: $0) }
                 }
             }
             .listStyle(.insetGrouped)
@@ -72,10 +89,17 @@ struct ContactsTab: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        Button {
-                            showAddContact = true
-                        } label: {
-                            Label("添加联系人", systemImage: "person.badge.plus")
+                        if appState.isLoggedIn {
+                            Button {
+                                showFindFriends = true
+                            } label: {
+                                Label("查找", systemImage: "person.badge.plus")
+                            }
+                            Button {
+                                loadFriends()
+                            } label: {
+                                Label("刷新好友", systemImage: "arrow.clockwise")
+                            }
                         }
                         Button {
                             dmPrefill = ""
@@ -89,24 +113,98 @@ struct ContactsTab: View {
                     }
                 }
             }
-            .navigationDestination(for: String.self) { value in
-                if value == "self" {
-                    MeAccountView()
-                        .environmentObject(appState)
-                }
-            }
-            .sheet(isPresented: $showAddContact) {
-                AddContactSheet(onSaved: { _, _ in })
+            .sheet(isPresented: $showFindFriends) {
+                FindFriendsSheet()
                     .environmentObject(appState)
             }
             .sheet(isPresented: $showNewDM) {
                 NewDMSheet(prefillUserId: dmPrefill) { _, name in
-                    // 记住常用联系人(以发起前填写的对方 ID 为准;onCreated 首参是 roomId 非 userId)
-                    if let uid = Int(dmPrefill) { store.remember(userId: uid, name: name) }
+                    if let uid = Int(dmPrefill) {
+                        store.remember(userId: uid, name: name)
+                    }
                 }
                 .environmentObject(appState)
             }
+            .task {
+                if appState.isLoggedIn { loadFriends() }
+            }
+            .refreshable { if appState.isLoggedIn { loadFriends() } }
         }
+    }
+
+    // MARK: - 好友行
+
+    private func friendRow(_ f: FriendsAPI.Friend) -> some View {
+        HStack(spacing: 12) {
+            ChatAvatar(label: f.handle, isGroup: false)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(f.handle)
+                    if f.initiator == "theirs" {
+                        Text("TA 加你")
+                            .font(.caption2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(Color.accentColor.opacity(0.15))
+                            .foregroundColor(Color.accentColor)
+                            .cornerRadius(5)
+                    }
+                }
+                Text(friendMaskLine(f))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Menu {
+                Button("发起聊天") {
+                    dmPrefill = String(f.userId)
+                    showNewDM = true
+                }
+                Button("删除好友", role: .destructive) {
+                    if let token = appState.authToken {
+                        let uid = f.userId
+                        Task {
+                            try? await FriendsAPI.remove(uid, token: token)
+                            friends.removeAll { $0.userId == uid }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+        }
+    }
+
+    private func friendMaskLine(_ f: FriendsAPI.Friend) -> String {
+        var parts: [String] = []
+        if let p = f.phoneMasked, !p.isEmpty { parts.append(p) }
+        if let e = f.emailMasked, !e.isEmpty { parts.append(e) }
+        return parts.isEmpty ? "ID \(f.userId)" : parts.joined(separator: " · ")
+    }
+
+    // MARK: - 数据
+
+    private func loadFriends() {
+        guard appState.isLoggedIn, !loadingFriends, let token = appState.authToken else { return }
+        loadingFriends = true
+        Task {
+            do {
+                friends = try await FriendsAPI.list(token: token)
+            } catch {
+                friends = []
+            }
+            loadingFriends = false
+        }
+    }
+
+    private func deleteFriends(at offsets: IndexSet) {
+        let removed = offsets.map { friends[$0] }
+        if let token = appState.authToken {
+            for f in removed {
+                Task { try? await FriendsAPI.remove(f.userId, token: token) }
+            }
+        }
+        friends.remove(atOffsets: offsets)
     }
 }
 
@@ -147,58 +245,5 @@ struct MeAccountView: View {
         }
         .navigationTitle("我的账号")
         .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-// MARK: - 添加联系人 sheet(本机保存;ID 填了才生成聊天入口)
-
-struct AddContactSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var userId = ""
-    let onSaved: (Int, String) -> Void
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("显示名称(可选)")
-                        .font(.caption).foregroundStyle(.secondary)
-                    TextField("如:林某", text: $name)
-                        .textFieldStyle(.roundedBorder)
-                    Text("用户 ID(发起聊天必需)")
-                        .font(.caption).foregroundStyle(.secondary)
-                    TextField("数字 ID", text: $userId)
-                        .keyboardType(.numberPad)
-                        .textFieldStyle(.roundedBorder)
-                }
-                .padding(.horizontal, 20)
-
-                Button {
-                    if let uid = Int(userId) {
-                        let n = name.isEmpty ? "账号 \(uid)" : name
-                        CommonContactsStore.shared.remember(userId: uid, name: n)
-                        onSaved(uid, n)
-                        dismiss()
-                    }
-                } label: {
-                    Text("保存")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(userId.isEmpty || !userId.allSatisfy(\.isNumber))
-                .padding(.horizontal, 20)
-
-                Spacer()
-            }
-            .navigationTitle("添加联系人")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
-                }
-            }
-        }
     }
 }

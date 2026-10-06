@@ -103,6 +103,7 @@ struct ChatsTab: View {
     @State private var showInviteCreate = false
     @State private var showTempChat = false
     @State private var showLogin = false
+    @State private var showFindFriends = false
 
     var body: some View {
         Group {
@@ -126,6 +127,10 @@ struct ChatsTab: View {
         }
         .sheet(isPresented: $showLogin) {
             LoginView(preferRegister: false)
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $showFindFriends) {
+            FindFriendsSheet()
                 .environmentObject(appState)
         }
     }
@@ -155,6 +160,11 @@ struct ChatsTab: View {
                             showNewDM = true
                         } label: {
                             Label("发起聊天", systemImage: "bubble.left.and.bubble.right.fill")
+                        }
+                        Button {
+                            showFindFriends = true
+                        } label: {
+                            Label("查找好友", systemImage: "person.badge.plus")
                         }
                         Button {
                             showInviteCreate = true

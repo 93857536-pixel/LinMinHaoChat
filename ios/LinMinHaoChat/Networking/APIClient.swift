@@ -401,5 +401,61 @@ enum InviteAPI {
     }
 }
 
+// MARK: - 好友系统(与 server/src/routes/friends.ts 对齐;脱敏:仅 handle + 掩码号码)
+enum FriendsAPI {
+    struct Friend: Decodable, Identifiable, Hashable {
+        let userId: Int
+        let handle: String
+        let phoneMasked: String?
+        let emailMasked: String?
+        let addedAt: Int64
+        let initiator: String   // "mine" | "theirs"
+        var id: Int { userId }
+    }
+
+    struct SearchUser: Decodable, Identifiable, Hashable {
+        let userId: Int
+        let handle: String
+        let phoneMasked: String?
+        let emailMasked: String?
+        var isFriend: Bool   // var:搜索后本地乐观更新(添加成功即翻 true)
+        var id: Int { userId }
+    }
+
+    struct FriendsResult: Decodable {
+        let ok: Bool
+        let friends: [Friend]
+    }
+
+    struct SearchResult: Decodable {
+        let ok: Bool
+        let users: [SearchUser]
+    }
+
+    /// 我的好友列表
+    static func list(token: String) async throws -> [Friend] {
+        let result: FriendsResult = try await APIClient.request("/friends", token: token)
+        return result.friends
+    }
+
+    /// 搜索用户(handle 模糊 / 掩码号码末 4 位;全数字 ≥4 位按号码搜)
+    static func search(_ query: String, token: String) async throws -> [SearchUser] {
+        let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        let result: SearchResult = try await APIClient.request("/friends/search?query=\(q)", token: token)
+        return result.users
+    }
+
+    /// 添加好友(双向互加,幂等)
+    static func add(_ userId: Int, token: String) async throws {
+        let body: [String: Any] = ["userId": userId]
+        let _: Empty = try await APIClient.request("/friends", method: "POST", body: body, token: token)
+    }
+
+    /// 移除好友(幂等)
+    static func remove(_ userId: Int, token: String) async throws {
+        let _: Empty = try await APIClient.request("/friends/\(userId)", method: "DELETE", token: token)
+    }
+}
+
 // 服务器成功但不返回 body 的响应
 struct Empty: Decodable {}

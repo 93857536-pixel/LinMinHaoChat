@@ -7,6 +7,7 @@ import { keysRouter } from './routes/keys.js';
 import { tempRouter } from './routes/temp.js';
 import { inviteRouter } from './routes/invite.js';
 import { chatRouter } from './routes/chat.js';
+import { friendsRouter } from './routes/friends.js';
 import { pnsRouter } from './routes/pns.js';
 import { attachmentsRouter } from './routes/attachments.js';
 import { adminRouter } from './routes/admin.js';
@@ -54,6 +55,7 @@ export function buildApp(): Express {
   app.use('/api/temp', tempRouter);
   app.use('/api/invite', inviteRouter);
   app.use('/api/chat', chatRouter);
+  app.use('/api/friends', friendsRouter);
   app.use('/api/attachments', attachmentsRouter);
   app.use('/api/admin', adminRouter);
   // 备份:分块 body 上限 10MB(独立解析器,manifest 等小请求同样走这里)

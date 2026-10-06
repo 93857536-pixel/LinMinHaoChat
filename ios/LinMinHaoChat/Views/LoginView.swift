@@ -352,8 +352,16 @@ struct LoginView: View {
             return
         }
 
+        // 沿 presentedViewController 链取最顶层 VC:LoginView 现在是 sheet(fullScreen 或页面内 sheet),
+        // 授权页必须从当前最顶层可呈现的控制器弹出;传 rootViewController(被 sheet 盖住)
+        // 会被 UIKit 拒绝 present → SDK 报 600002「授权页唤起失败」。
+        var topController = root
+        while let presented = topController.presentedViewController {
+            topController = presented
+        }
+
         let result = await withCheckedContinuation { (cont: CheckedContinuation<PNSLoginResult, Never>) in
-            PNSAuthManager.shared.startOneTapLogin(from: root) { r in cont.resume(returning: r) }
+            PNSAuthManager.shared.startOneTapLogin(from: topController) { r in cont.resume(returning: r) }
         }
 
         switch result {
