@@ -33,6 +33,8 @@ final class AppState: ObservableObject {
     private var networkTask: Task<Void, Never>?
 
     /// 当前是否有账号登录态(Keychain 中持久化 token)
+    @Published var chatListVersion = 0   // 进入聊天后自增,通知列表刷新未读/预览
+
     init() {
         // 恢复认证信息
         if let tokenData = KeychainStore.load(account: "lmh.auth.token") {

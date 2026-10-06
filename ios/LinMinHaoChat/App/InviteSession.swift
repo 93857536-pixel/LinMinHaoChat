@@ -6,7 +6,8 @@ import SwiftUI
 final class InviteSession: ObservableObject {
     @Published var pending: InviteRequest?
 
-    struct InviteRequest {
+    struct InviteRequest: Identifiable, Equatable, Hashable {
+        let id = UUID()
         let inviteId: String
         let sessionKeyB64url: String?
         /// URL query:roomCode=<6位码>(已解析好的直接跳过验证码)
@@ -16,6 +17,9 @@ final class InviteSession: ObservableObject {
         /// 账号模式下的服务端 token
         let jwt: String?
         let nickname: String?
+
+        static func == (l: Self, r: Self) -> Bool { l.id == r.id }
+        func hash(into hasher: inout Hasher) { hasher.combine(id) }
 
         init(inviteId: String, sessionKeyB64url: String? = nil,
              roomCode: String? = nil, accountMode: Bool = false,

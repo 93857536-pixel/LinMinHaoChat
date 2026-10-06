@@ -123,6 +123,8 @@ final class ChatRoomViewModel: ObservableObject {
                 try? await ChatAPI.markRead(self.roomId, lastSeq: self.lastSeq, token: self.token)
             }
         }
+        // 更新聊天列表预览(本地缓存,不上传)
+        updatePreview()
     }
 
     private func decrypt(_ m: ChatMsg, sessionKey: SymmetricKey) -> DecryptedMsg? {
@@ -234,5 +236,12 @@ final class ChatRoomViewModel: ObservableObject {
         } catch {
             errorMessage = "发送失败:\(error.localizedDescription)"
         }
+    }
+
+    // MARK: - 列表预览(本地缓存,不上传;进入/离开聊天通知列表刷新未读)
+    private func updatePreview() {
+        guard let last = messages.last else { return }
+        ChatPreviewStore.shared.set(roomId, text: last.text, ts: last.ts, senderLabel: last.mine ? nil : last.label)
+        AppState.shared.chatListVersion += 1
     }
 }

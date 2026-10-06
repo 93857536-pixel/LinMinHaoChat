@@ -55,7 +55,7 @@ struct RoomMeta: Decodable, Identifiable {
     let nameEnc: String?
     let createdAt: Int64
     let memberIds: [Int]
-    let unread: Int
+    var unread: Int          // 可本地改写(左滑「标记已读」清未读徽章)
     let lastSeq: Int
 }
 
@@ -127,6 +127,25 @@ enum TimeUtil {
         let d = Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
+        return f.string(from: d)
+    }
+
+    /// 聊天列表时间:今天→HH:mm;7 天内→周几;更早→MM-dd
+    static func formatListTime(_ ms: Int64) -> String {
+        let d = Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
+        let now = Date()
+        let cal = Calendar.current
+        if cal.isDateInToday(d) {
+            return TimeUtil.formatTime(ms)
+        }
+        if let days = cal.dateComponents([.day], from: d, to: now).day, days < 7 {
+            let f = DateFormatter()
+            f.dateFormat = "EEE"
+            f.locale = Locale(identifier: "zh_CN")
+            return f.string(from: d)
+        }
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd"
         return f.string(from: d)
     }
     
