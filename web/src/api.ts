@@ -1,6 +1,8 @@
 /** REST API 客户端(统一错误处理 + 认证头) */
 
-const BASE = '/api';
+// 运行时基址:Web 端走同源反代('/api');移动端(WebView 壳)由 boot 注入绝对地址。
+// 由主会话统一维护,业务代码不得改动此机制。
+const BASE = (globalThis as unknown as { __LMH_API_BASE__?: string }).__LMH_API_BASE__ || '/api';
 
 export class ApiError extends Error {
   status: number;

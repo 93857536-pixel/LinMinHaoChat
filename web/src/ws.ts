@@ -22,8 +22,13 @@ export interface WsHandle {
 }
 
 export function connectWs(token: string, opts: WsClientOptions): WsHandle {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+  // 运行时基址覆盖:Web 端走同源(location);移动端(WebView 壳)由 boot 注入 wss:// 绝对地址。
+  const override = (globalThis as unknown as { __LMH_WS_BASE__?: string }).__LMH_WS_BASE__;
+  const proto = override
+    ? (override.startsWith('wss') ? 'wss' : 'ws')
+    : (location.protocol === 'https:' ? 'wss' : 'ws');
+  const host = override ? override.replace(/^wss?:\/\//, '') : location.host;
+  const ws = new WebSocket(`${proto}://${host}/ws?token=${encodeURIComponent(token)}`);
   let closed = false;
 
   ws.onopen = () => opts.onOpen?.();

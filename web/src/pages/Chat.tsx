@@ -12,6 +12,11 @@ import { ensureIdentityKeys, exportEncryptedPackage, importEncryptedPackage } fr
 import { generateSessionKey, wrapSessionKey, unwrapSessionKey, type Bytes } from '../crypto/session';
 import { encryptMessage, decryptMessage, encryptAttachment, decryptAttachment, encodeMessageBody, decodeMessageBody } from '../crypto/message';
 import { connectWs, type WsMsg } from '../ws';
+import { voiceSupported, startVoiceRecording, stopVoiceRecording, cancelVoiceRecording, type VoiceClip } from '../mobile/native';
+import MessageActionSheet from '../features/chat/MessageActionSheet';
+import ForwardDialog from '../features/chat/ForwardDialog';
+import MemberManageScreen from '../features/chat/MemberManageScreen';
+import { msgExt } from '../features/api-ext';
 
 interface DecryptedMsg {
   id: string;
@@ -23,6 +28,10 @@ interface DecryptedMsg {
   text: string;
   att?: { attId: string; name: string; size: number; mime: string };
   read?: boolean;
+  /** 原始密文载荷(转发时要用:解密原文 → 目标房间重加密) */
+  iv?: string;
+  cipher?: string;
+  meta?: string;
 }
 
 export default function Chat() {
@@ -186,6 +195,7 @@ export default function Chat() {
       kind: m.kind === 'attachment' ? 'attachment' : 'msg',
       text: body.t || '',
       read: m.senderId !== myId ? true : undefined,
+      iv: m.iv, cipher: m.cipher, meta: m.meta ?? undefined,
     };
     if (body.f) base.att = { attId: body.f.attId || '', name: body.f.name, size: body.f.size, mime: body.f.mime };
     return base;
@@ -194,6 +204,40 @@ export default function Chat() {
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages, active]);
+
+  /* ---------------- 消息操作:长按菜单 / 收藏 / 转发 / 删除 ---------------- */
+
+  const [sheetMsg, setSheetMsg] = useState<DecryptedMsg | null>(null);
+  const [forwardMsg, setForwardMsg] = useState<DecryptedMsg | null>(null);
+  const [showMembers, setShowMembers] = useState(false);
+  const lpTimer = useRef<number | null>(null);
+
+  const startLongPress = (m: DecryptedMsg) => {
+    if (lpTimer.current) window.clearTimeout(lpTimer.current);
+    lpTimer.current = window.setTimeout(() => setSheetMsg(m), 450);
+  };
+  const cancelLongPress = () => {
+    if (lpTimer.current) {
+      window.clearTimeout(lpTimer.current);
+      lpTimer.current = null;
+    }
+  };
+
+  const starMsg = async (m: DecryptedMsg) => {
+    try {
+      await msgExt.star(m.id, token);
+      alert('已收藏,可在「收藏」中查看');
+    } catch (e) {
+      const msg = (e as Error).message || '';
+      alert(msg.includes('already_starred') ? '该消息已经收藏过了' : '收藏失败:' + msg);
+    }
+  };
+
+  /** 单条删除:服务端无删除接口(E2EE 归档),按产品行为只从本机视图移除 */
+  const deleteMsg = (m: DecryptedMsg) => {
+    if (!window.confirm('删除这条消息?(仅从本机移除,对方仍可见)')) return;
+    setMessages((prev) => prev.filter((x) => x.id !== m.id));
+  };
 
   /** 创建私聊 */
   const createDm = async () => {
@@ -333,6 +377,109 @@ export default function Chat() {
     }
   };
 
+  /* ---------------- 语音消息(m4a/AAC;与 iOS 端格式互通) ---------------- */
+
+  const [recording, setRecording] = useState(false);
+  const [recSecs, setRecSecs] = useState(0);
+  const recTimer = useRef<number | null>(null);
+
+  const startRec = async () => {
+    if (!active) return;
+    if (!voiceSupported()) {
+      alert('当前设备不支持语音录制');
+      return;
+    }
+    try {
+      await startVoiceRecording();
+      setRecording(true);
+      setRecSecs(0);
+      recTimer.current = window.setInterval(() => setRecSecs((s) => s + 1), 1000);
+    } catch (e) {
+      alert('无法开始录音:' + (e as Error).message);
+    }
+  };
+
+  const stopRec = async (sendIt: boolean) => {
+    if (recTimer.current) {
+      clearInterval(recTimer.current);
+      recTimer.current = null;
+    }
+    setRecording(false);
+    if (!sendIt) {
+      cancelVoiceRecording();
+      return;
+    }
+    try {
+      const clip: VoiceClip = await stopVoiceRecording();
+      if (clip.durationMs < 800) {
+        alert('录音太短,请多说一会儿');
+        return;
+      }
+      await sendVoice(clip);
+    } catch (e) {
+      alert('录音失败:' + (e as Error).message);
+    }
+  };
+
+  /** 发送语音:加密上传 + 与 iOS 完全一致的载荷(name=voice.m4a / mime=audio/aac / 带 duration 毫秒) */
+  const sendVoice = async (clip: VoiceClip) => {
+    if (!active) return;
+    const key = keyCache.current.get(active.id);
+    if (!key) return;
+    setSending(true);
+    try {
+      const buf = await clip.blob.arrayBuffer();
+      const ts = Date.now();
+      const secs = Math.max(1, Math.round(clip.durationMs / 1000));
+      const enc = await encryptAttachment(key, buf, active.id, ts);
+      const up = await attachmentApi.upload(active.id, clip.mime, enc, token);
+      const body = JSON.stringify({ f: { attId: up.attId, name: clip.name, size: buf.byteLength, mime: clip.mime, duration: Math.round(clip.durationMs) } });
+      const meta = JSON.stringify({ attId: up.attId, mime: clip.mime, size: buf.byteLength, duration: Math.round(clip.durationMs) });
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const targetSeq = lastSeqRef.current + 1;
+        const encMeta = await encryptMessage(key, body, active.id, targetSeq, ts);
+        try {
+          const resp = await chatApi.send(active.id, { iv: encMeta.iv, cipher: encMeta.ct, kind: 'attachment', meta, seq: targetSeq, ts }, token);
+          lastSeqRef.current = resp.seq;
+          const mine: DecryptedMsg = {
+            id: resp.id, seq: resp.seq, mine: true, senderId: myIdRef.current, ts: resp.ts, kind: 'attachment',
+            text: `🎙️ 语音 (${secs}s)`,
+            att: { attId: up.attId, name: clip.name, size: buf.byteLength, mime: clip.mime }, read: true,
+          };
+          setMessages((prev) => [...prev, mine].sort((a, b) => a.seq - b.seq));
+          break;
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 409 && typeof e.data?.seq === 'number') {
+            lastSeqRef.current = (e.data.seq as number) - 1;
+            continue;
+          }
+          throw e;
+        }
+      }
+    } catch (e) {
+      alert('语音发送失败:' + (e as Error).message);
+    }
+    setSending(false);
+  };
+
+  /** 播放语音(下载 → 解密 → 播放) */
+  const playVoice = async (att: { attId: string; name: string; mime: string }) => {
+    if (!active) return;
+    const key = keyCache.current.get(active.id);
+    if (!key) return;
+    try {
+      const encBuf = await attachmentApi.download(att.attId, token);
+      const m = messages.find((x) => x.att?.attId === att.attId);
+      const plain = await decryptAttachment(key, encBuf, active.id, m?.ts || Date.now());
+      const url = URL.createObjectURL(new Blob([plain], { type: 'audio/mp4' }));
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+    } catch {
+      alert('语音播放失败(解密失败或格式不支持)');
+    }
+  };
+
   /** 导出密钥包 */
   const doExport = async () => {
     const pin = prompt('设置一个导出口令(至少 8 位,请牢记;丢失无法找回):');
@@ -418,20 +565,37 @@ export default function Chat() {
             <span className={`presence-dot ${online.length > 1 ? 'online' : ''}`} />
             <div className="title">{roomName(active)} <span className="sub">#{active.id.slice(0, 8)}</span></div>
             <span className="sub">{onlineIps ? `${onlineIps} 个IP在线` : ''}</span>
+            {active.type === 'group' && (
+              <button className="btn btn-small" onClick={() => setShowMembers(true)} title="群成员">成员</button>
+            )}
           </div>
           {err && <div className="error" style={{ padding: '8px 0' }}>{err}</div>}
           <div className="msg-list" ref={listRef}>
             {messages.length === 0 && !err && <div className="msg sys">🔒 端到端加密会话已建立</div>}
             {messages.map((m) => (
-              <div key={m.id} className={`msg ${m.mine ? 'own' : 'other'} ${m.kind === 'attachment' ? 'attachment' : ''}`}>
+              <div
+                key={m.id}
+                className={`msg ${m.mine ? 'own' : 'other'} ${m.kind === 'attachment' ? 'attachment' : ''}`}
+                onContextMenu={(e) => { e.preventDefault(); setSheetMsg(m); }}
+                onTouchStart={() => startLongPress(m)}
+                onTouchEnd={cancelLongPress}
+                onTouchMove={cancelLongPress}
+              >
                 {!m.mine && <div className="sender">用户 #{m.senderId}</div>}
                 {m.kind === 'attachment' && m.att ? (
                   <div className="bubble">
-                    <div className="attach-chip">📎 {m.att.name} ({Math.round(m.att.size / 1024)} KB)</div>
+                    <div className="attach-chip">
+                      {m.att.mime.startsWith('audio/')
+                        ? '🎙️ 语音消息'
+                        : `📎 ${m.att.name} (${Math.round(m.att.size / 1024)} KB)`}
+                    </div>
+                    {m.att.mime.startsWith('audio/') && (
+                      <button className="btn btn-small" onClick={() => playVoice(m.att!)}>▶ 播放</button>
+                    )}
                     {m.att.mime.startsWith('image/') && (
                       <button className="btn btn-small" onClick={() => downloadAttachment(m.att!)}>查看图片</button>
                     )}
-                    {!m.att.mime.startsWith('image/') && (
+                    {!m.att.mime.startsWith('image/') && !m.att.mime.startsWith('audio/') && (
                       <button className="btn btn-small" onClick={() => downloadAttachment(m.att!)}>下载</button>
                     )}
                   </div>
@@ -446,6 +610,15 @@ export default function Chat() {
             ))}
           </div>
           <div className="input-row">
+            <button
+              className="btn btn-small"
+              style={{ flex: 'none', ...(recording ? { background: '#ff3b30', color: '#fff' } : {}) }}
+              onClick={() => (recording ? stopRec(true) : startRec())}
+              disabled={sending}
+              title={recording ? '点击结束并发送' : '发送语音消息(m4a)'}
+            >
+              {recording ? `■ ${recSecs}s` : '🎙'}
+            </button>
             <button className="btn btn-small" style={{ flex: 'none' }} onClick={() => {
               const fi = document.createElement('input');
               fi.type = 'file';
@@ -461,6 +634,37 @@ export default function Chat() {
             />
             <button className="btn btn-primary send" onClick={send} disabled={sending || !input.trim()}>➤</button>
           </div>
+
+          {/* 长按消息的操作菜单(复制/收藏/转发/删除) */}
+          <MessageActionSheet
+            open={!!sheetMsg}
+            msg={sheetMsg ? { id: sheetMsg.id, text: sheetMsg.text, kind: sheetMsg.kind } : null}
+            onClose={() => setSheetMsg(null)}
+            onForward={() => { setForwardMsg(sheetMsg); setSheetMsg(null); }}
+            onStar={() => { if (sheetMsg) void starMsg(sheetMsg); setSheetMsg(null); }}
+            onDelete={() => { if (sheetMsg) deleteMsg(sheetMsg); setSheetMsg(null); }}
+          />
+
+          {/* 转发:选目标会话 → 用目标房间密钥重加密后发送 */}
+          <ForwardDialog
+            open={!!forwardMsg}
+            roomId={active.id}
+            msgId={forwardMsg?.id || ''}
+            payload={{
+              iv: forwardMsg?.iv || '',
+              cipher: forwardMsg?.cipher || '',
+              kind: forwardMsg?.kind || 'msg',
+              meta: forwardMsg?.meta,
+            }}
+            onClose={() => setForwardMsg(null)}
+          />
+
+          {/* 群成员管理(对应 iOS MemberManageView) */}
+          {showMembers && (
+            <div style={{ position: 'fixed', inset: 0, background: '#f5f5f7', zIndex: 600, overflow: 'auto' }}>
+              <MemberManageScreen roomId={active.id} onBack={() => setShowMembers(false)} />
+            </div>
+          )}
         </>
       )}
 
