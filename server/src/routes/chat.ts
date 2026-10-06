@@ -223,6 +223,54 @@ chatRouter.get('/rooms/:id/online', (req, res) => {
   res.json({ ok: true, online: onlineMembers(roomId) });
 });
 
+/** 转发消息:从源房间复制到目标房间(重新加密) */
+chatRouter.post('/rooms/:id/forward', (req, res) => {
+  const targetRoomId = String(req.params.id);
+  if (!isMember(targetRoomId, req.user!.id)) return res.status(404).json({ error: 'not_found' });
+  const { sourceMsgId, srcRoomId, cipher, iv, kind, meta, ts: clientTs } = req.body || {};
+  
+  // 校验源消息存在且可访问
+  if (!sourceMsgId || !srcRoomId || !cipher || !iv) {
+    return res.status(400).json({ error: 'missing_fields' });
+  }
+  
+  const srcRoom = db.prepare('SELECT id FROM rooms WHERE id=?').get(srcRoomId);
+  if (!srcRoom) return res.status(404).json({ error: 'source_room_not_found' });
+  
+  const srcMsg = db.prepare('SELECT id, kind, seq, ts, cipher_path, meta_enc FROM messages WHERE id=? AND room_id=?').get(sourceMsgId, srcRoomId) as MsgRow | undefined;
+  if (!srcMsg) return res.status(404).json({ error: 'source_msg_not_found' });
+  
+  // 校验时间戳
+  const now = Number(clientTs);
+  if (!Number.isInteger(now) || now <= 0 || Math.abs(now - Date.now()) > 30 * 60_000) {
+    return res.status(400).json({ error: 'bad_ts' });
+  }
+  
+  // 校验密文长度
+  if (cipher.length > config.maxBodyBytes) {
+    return res.status(400).json({ error: 'cipher_too_large' });
+  }
+  
+  // 获取目标房间当前 seq
+  const expectedSeq = (db.prepare('SELECT COALESCE(MAX(seq),0) AS s FROM messages WHERE room_id=?').get(targetRoomId) as { s: number }).s + 1;
+  
+  // 存储密文
+  const rel = store.saveMessageCipher(targetRoomId, expectedSeq, Buffer.from(cipher, 'utf8'));
+  const id = newId('m_');
+  const metaEnc = typeof meta === 'string' && meta.length <= 1024 ? meta : null;
+  const aad = `${targetRoomId}:${expectedSeq}:${now}`;
+  
+  db.prepare('INSERT INTO messages (id, room_id, kind, seq, sender_user_id, cipher_path, iv, aad, meta_enc, ts) VALUES (?,?,?,?,?,?,?,?,?,?)')
+    .run(id, targetRoomId, kind || 'msg', expectedSeq, req.user!.id, rel, iv, aad, metaEnc, now);
+  
+  broadcast(targetRoomId, {
+    type: 'msg', roomId: targetRoomId, seq: expectedSeq, id, senderId: req.user!.id, ts: now, kind: kind || 'msg',
+  });
+  
+  logger.info('msg_forwarded', { from: srcRoomId, to: targetRoomId, msgId: sourceMsgId, seq: expectedSeq });
+  res.json({ ok: true, seq: expectedSeq, id, ts: now });
+});
+
 type BroadcastFn = (roomId: string, payload: unknown) => void;
 let broadcast: BroadcastFn = () => {};
 export function setChatBroadcast(fn: BroadcastFn) { broadcast = fn; }

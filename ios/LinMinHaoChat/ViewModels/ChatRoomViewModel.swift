@@ -258,6 +258,25 @@ final class ChatRoomViewModel: ObservableObject {
         messages.removeAll { $0.id == msgId }
     }
 
+    // MARK: - 转发消息
+    func forwardMessage(_ msg: DecryptedMsg, toRoomId targetRoomId: String, sessionKey: SymmetricKey, token: String) async throws {
+        guard !msg.text.isEmpty else { return }
+        
+        let ts = TimeUtil.nowMs
+        let targetSeq = lastSeq + 1
+        
+        // 转发时添加前缀标记
+        let forwardedText = "↪ 转发: \(msg.text)"
+        let enc = try MessageCrypto.encryptMessage(sessionKey: sessionKey,
+                                                   plaintext: MessageCrypto.encodeMessageBody(text: forwardedText),
+                                                   roomId: targetRoomId, seq: targetSeq, ts: ts)
+        let r = try await ChatAPI.send(targetRoomId, iv: enc.iv, cipher: enc.ct,
+                                       seq: targetSeq, ts: ts, kind: "msg", token: token)
+        lastSeq = r.seq
+        messages.append(DecryptedMsg(id: r.id, seq: r.seq, label: "我", mine: true,
+                                     text: forwardedText, ts: r.ts, kind: "msg"))
+    }
+
     // MARK: - 列表预览(本地缓存,不上传;进入/离开聊天通知列表刷新未读)
     func updatePreview() {
         guard let last = messages.last else { return }
@@ -267,4 +286,7 @@ final class ChatRoomViewModel: ObservableObject {
     
     /// 公开 nextSeq (供发送附件使用)
     var nextSeq: Int { get { lastSeq + 1 } set { lastSeq = newValue - 1 } }
+    
+    /// 公开 lastSeq (供转发使用)
+    var currentLastSeq: Int { lastSeq }
 }

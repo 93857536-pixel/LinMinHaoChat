@@ -347,6 +347,21 @@ enum ChatAPI {
     static func online(_ roomId: String, token: String) async throws -> OnlineResult {
         try await APIClient.request("/chat/rooms/\(roomId)/online", token: token)
     }
+
+    /// 转发消息到其他房间
+    static func forward(_ targetRoomId: String, sourceMsgId: String, srcRoomId: String, cipher: String, iv: String, kind: String, meta: String?, token: String) async throws -> SendResult {
+        var body: [String: Any] = [
+            "sourceMsgId": sourceMsgId,
+            "srcRoomId": srcRoomId,
+            "cipher": cipher,
+            "iv": iv,
+            "kind": kind
+        ]
+        if let meta { body["meta"] = meta }
+        body["ts"] = Int64(Date().timeIntervalSince1970 * 1000)
+        let result: SendResult = try await APIClient.request("/chat/rooms/\(targetRoomId)/forward", body: body, token: token)
+        return result
+    }
 }
 
 // MARK: - 邀请链接(与 server/src/routes/invite.ts 对齐:链接 + 6 位验证码,密钥走 #fragment)

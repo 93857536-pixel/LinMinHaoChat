@@ -101,7 +101,8 @@ struct InviteChatView: View {
                                 MessageBubbleView(
                                     msg: msg,
                                     onCopy: { UIPasteboard.general.string = msg.text },
-                                    onDelete: nil
+                                    onDelete: nil,
+                                    onForward: nil
                                 ).id(msg.id)
                             }
                         }

@@ -35,6 +35,10 @@ struct ChatView: View {
     @State private var selectedImage: UIImage?
     @State private var isSending = false
     @State private var showPicker = false
+    @State private var showForwardSheet = false
+    @State private var forwardMsg: DecryptedMsg?
+    @State private var rooms: [(id: String, name: String)] = []
+    @State private var isForwarding = false
     
     init(session: ChatRoomSession) {
         self.session = session
@@ -69,7 +73,8 @@ struct ChatView: View {
                         LazyVStack(spacing: 10) {
                             ForEach(viewModel.messages) { msg in
                                 MessageBubbleView(msg: msg, onCopy: { copyToClipboard(msg.text) },
-                                    onDelete: viewModel.messages.contains(where: { $0.id == msg.id }) ? { viewModel.deleteMessage(msg.id) } : nil)
+                                    onDelete: viewModel.messages.contains(where: { $0.id == msg.id }) ? { viewModel.deleteMessage(msg.id) } : nil,
+                                    onForward: { forwardMsg = msg; showForwardSheet = true })
                                     .id(msg.id)
                             }
                         }
@@ -134,6 +139,75 @@ struct ChatView: View {
             if id != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copiedMsgId = nil } }
         }
         .sheet(isPresented: $showPicker) { ImagePicker(image: $selectedImage) }
+        .sheet(isPresented: $showForwardSheet) { forwardSheet }
+    }
+    
+    private var forwardSheet: some View {
+        NavigationView {
+            List(rooms, id: \.id) { room in
+                Button {
+                    Task { await forwardToRoom(room.id) }
+                } label: {
+                    HStack {
+                        Text(room.name).font(.body)
+                        Spacer()
+                    }
+                }
+            }
+            .navigationTitle("转发到")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { showForwardSheet = false }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    if isForwarding { ProgressView() }
+                }
+            }
+            .task { await loadRooms() }
+        }
+    }
+    
+    private func loadRooms() async {
+        guard let token = AppState.shared.authToken else { return }
+        do {
+            let result = try await ChatAPI.rooms(token: token)
+            rooms = result.rooms.map { ($0.id, $0.nameEnc ?? "未命名") }
+        } catch {
+            errorMessage = "加载房间列表失败"
+        }
+    }
+    
+    private func forwardToRoom(_ targetRoomId: String) async {
+        guard let msg = forwardMsg,
+              let token = AppState.shared.authToken,
+              let sessionKey = viewModel.currentSessionKey else {
+            errorMessage = "转发失败"
+            return
+        }
+        isForwarding = true
+        defer { isForwarding = false }
+        
+        do {
+            let ts = TimeUtil.nowMs
+            let targetSeq = viewModel.nextSeq
+            
+            // 转发时添加前缀标记
+            let forwardedText = "↪ 转发: \(msg.text)"
+            let enc = try MessageCrypto.encryptMessage(sessionKey: sessionKey,
+                                                       plaintext: MessageCrypto.encodeMessageBody(text: forwardedText),
+                                                       roomId: targetRoomId, seq: targetSeq, ts: ts)
+            let r = try await ChatAPI.send(targetRoomId, iv: enc.iv, cipher: enc.ct,
+                                           seq: targetSeq, ts: ts, kind: "msg", token: token)
+            
+            viewModel.messages.append(DecryptedMsg(id: r.id, seq: r.seq, label: "我", mine: true,
+                                                   text: forwardedText, ts: r.ts, kind: "msg"))
+            
+            showForwardSheet = false
+            forwardMsg = nil
+        } catch {
+            errorMessage = "转发失败: \(error.localizedDescription)"
+        }
     }
     
     private func copyToClipboard(_ text: String) {
@@ -182,6 +256,7 @@ struct MessageBubbleView: View {
     let msg: DecryptedMsg
     let onCopy: () -> Void
     let onDelete: (() -> Void)?
+    let onForward: (() -> Void)?
     
     var body: some View {
         HStack {
@@ -203,6 +278,7 @@ struct MessageBubbleView: View {
             }
             .contextMenu {
                 if msg.text.count > 0 { Button { onCopy() } label: { Label("复制", systemImage: "doc.on.doc") } }
+                if let onForward = onForward { Button { onForward() } label: { Label("转发", systemImage: "arrowshape.turn.up.right") } }
                 if msg.mine {
                     if let onDelete = onDelete { Button(role: .destructive) { onDelete() } label: { Label("删除", systemImage: "trash") } }
                 }
