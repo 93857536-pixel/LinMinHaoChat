@@ -472,7 +472,7 @@ export default function MeScreen() {
         退出登录
       </button>
 
-      <p className="mv-hint">版本 1.9.13 · Android 端 · 端到端加密</p>
+      <p className="mv-hint">版本 1.9.15 · Android 端 · 端到端加密</p>
     </div>
   );
 }

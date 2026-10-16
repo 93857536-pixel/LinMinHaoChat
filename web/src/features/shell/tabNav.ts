@@ -14,3 +14,17 @@ export function registerTabSetter(fn: ((t: TabKey) => void) | null): void {
 export function goTab(tab: TabKey): void {
   setter?.(tab);
 }
+
+/**
+ * 内部路径导航桥:功能屏(如发现页的临时/邀请聊天)打开 /t/<id>、/i/<id> 页。
+ * MobileApp 用 registerPathSetter 注册;未注册时静默忽略(浏览器直开无移动壳)。
+ */
+let pathSetter: ((p: string) => void) | null = null;
+
+export function registerPathSetter(fn: ((p: string) => void) | null): void {
+  pathSetter = fn;
+}
+
+export function goPath(p: string): void {
+  pathSetter?.(p);
+}
