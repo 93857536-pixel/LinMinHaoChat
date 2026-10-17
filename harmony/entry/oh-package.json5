@@ -1,0 +1,9 @@
+{
+  "name": "entry",
+  "version": "1.9.16",
+  "description": "LinMinHao Chat 鸿蒙入口模块(ArkTS + ArkWeb 壳, 加载生产站点 + Capacitor 兼容桥)",
+  "main": "Index.ets",
+  "author": "",
+  "license": "GPL-3.0",
+  "dependencies": {}
+}

@@ -1,0 +1,56 @@
+#!/usr/bin/env node
+/**
+ * hvigorw — LinMinHaoChat HarmonyOS 构建入口(适配本机 ~/command-line-tools 的 hvigor)。
+ *
+ * 用法(先按 docs/README.md 装好华为 Command Line Tools 并 export 环境):
+ *   ./hvigorw clean
+ *   ./hvigorw assembleHap --mode module -p product=default -p debug
+ *   ./hvigorw assembleApp --mode module -p product=default -p release
+ *
+ * 说明: hvigor 由 SDK 提供(npm 包 @ohos/hvigor), 这里用 node 引导; 找不到时给出明确指引。
+ */
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+
+function fail(msg) {
+  console.error('\n[hvigorw] ' + msg);
+  console.error('  → 请先安装华为 HarmonyOS Command Line Tools(需登录 developer.huawei.com):');
+  console.error('      export OHOS_HOME=~/command-line-tools');
+  console.error('      export PATH=$OHOS_HOME/bin:$OHOS_HOME/toolchains:$PATH');
+  console.error('      详见 harmony/docs/README.md 的「构建 .hap」一节。');
+  process.exit(1);
+}
+
+// 1) 找 hvigor 可执行(优先 SDK toolchains, 其次 node 全局)
+const candidates = [
+  process.env.OHOS_HOME ? path.join(process.env.OHOS_HOME, 'toolchains', 'hvigorw') : null,
+  process.env.OHOS_HOME ? path.join(process.env.OHOS_HOME, 'bin', 'hvigorw') : null,
+  'hvigorw'
+].filter(Boolean);
+
+let found = null;
+for (const c of candidates) {
+  try {
+    if (c !== 'hvigorw') {
+      if (fs.existsSync(c)) { found = c; break; }
+    } else {
+      const out = execSync('command -v hvigorw', { stdio: 'pipe' }).toString().trim();
+      if (out) { found = out; break; }
+    }
+  } catch (e) { /* 继续下一个 */ }
+}
+
+if (!found) {
+  fail('未找到 hvigorw。');
+}
+
+// 2) 把本目录(工程根)作为 cwd 透传给 hvigor, 透传全部参数
+const args = process.argv.slice(2);
+const cmd = `'${found}' ${args.join(' ')}`;
+console.log('[hvigorw] 执行: ' + cmd + '  (cwd=' + process.cwd() + ')');
+try {
+  execSync(cmd, { stdio: 'inherit', cwd: process.cwd() });
+} catch (e) {
+  process.exit(e.status || 1);
+}

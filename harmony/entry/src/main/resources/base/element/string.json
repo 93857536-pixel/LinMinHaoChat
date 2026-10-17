@@ -1,0 +1,8 @@
+{
+  "string": [
+    { "name": "module_desc", "value": "LinMinHao Chat 入口模块" },
+    { "name": "ability_desc", "value": "端到端加密通讯(聊天/通讯录/发现/我的)" },
+    { "name": "net_reason", "value": "访问 LinMinHao Chat 服务(消息收发/附件/登录)" },
+    { "name": "mic_reason", "value": "录制并发送语音消息(m4a/AAC)" }
+  ]
+}

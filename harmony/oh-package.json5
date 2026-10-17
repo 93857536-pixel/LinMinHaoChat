@@ -1,0 +1,11 @@
+{
+  "modelVersion": "5.0.0",
+  "name": "lmhchat",
+  "version": "1.9.16",
+  "description": "LinMinHao Chat — HarmonyOS(鸿蒙)版壳工程(ArkTS + ArkWeb, 复用 Android/iOS 同一套 React 前端)。",
+  "license": "GPL-3.0",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.19"
+  }
+}

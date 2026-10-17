@@ -1,0 +1,6 @@
+{
+  "string": [
+    { "name": "app_name", "value": "LinMinHao Chat" },
+    { "name": "app_desc", "value": "端到端加密通讯 · HarmonyOS 版" }
+  ]
+}
