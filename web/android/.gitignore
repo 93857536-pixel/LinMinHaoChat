@@ -105,4 +105,4 @@ app/src/main/res/xml/config.xml
 *.jks
 keystore.properties
 # 号码认证 AppSecret(本机私有,同 keystore.properties 模式,绝不入库)
-android/pns.properties
+pns.properties
