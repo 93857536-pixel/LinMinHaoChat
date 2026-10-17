@@ -11,6 +11,14 @@ android {
         keystoreProps.load(new FileInputStream(keystorePropsFile))
     }
 
+    // 阿里云号码认证 AppSecret(方案级,本机私有,不进 git;缺失时 PnsAuth 插件整体不可用,不影响其它功能)
+    def pnsPropsFile = rootProject.file("pns.properties")
+    def pnsProps = new Properties()
+    if (pnsPropsFile.exists()) {
+        pnsProps.load(new FileInputStream(pnsPropsFile))
+    }
+    def pnsAppSecret = pnsProps.containsKey('pnsAppSecret') ? pnsProps['pnsAppSecret'] : ''
+
     signingConfigs {
         release {
             if (keystorePropsFile.exists()) {
@@ -25,10 +33,13 @@ android {
         applicationId "com.linminhao.chat"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // 与 iOS 版对齐基线 v1.9.13;1.9.14 = Android 侧增量发布(新增深链);1.9.15 = 发现页全功能(临时/邀请聊天发起+加入)
-        versionCode 15
-        versionName "1.9.15"
+        // 与 iOS 版对齐基线 v1.9.13;1.9.14 = Android 侧增量发布(新增深链);1.9.15 = 发现页全功能(临时/邀请聊天发起+加入);1.9.16 = 一键登录(号码认证 Android SDK)
+        versionCode 16
+        versionName "1.9.16"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // 阿里云号码认证 Android 方案 AppSecret(方案 FC220000013715102,包名 com.linminhao.chat)
+        buildConfigField "boolean", "PNS_ENABLED", pnsAppSecret ? "true" : "false"
+        buildConfigField "String", "PNS_APP_SECRET", "\"" + pnsAppSecret + "\""
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -38,12 +49,20 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            // 用自持 keystore 签名(能生成可安装且可覆盖升级的正式包)
+            // 用自持 keystore 签名(能生成可覆盖升级的正式包)
             if (keystorePropsFile.exists()) {
                 signingConfig signingConfigs.release
             }
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+    // AGP 8.x 默认不生成 BuildConfig(号码认证 AppSecret 经 BuildConfig 注入),显式开启
+    buildFeatures {
+        buildConfig true
+    }
+    packagingOptions {
+        // 阿里云号码认证 SDK 自带 3 套 so(arm64-v8a/armeabi-v7a/x86);真机只装 arm 两套,x86 仅模拟器
+        pickFirst 'lib/**/libpns-*.so'
     }
 }
 
@@ -59,6 +78,11 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // 阿里云号码认证(一键登录)Android SDK:三件套 aar,经上方 flatDir 'libs' 解析
+    // 产物来源:号码认证控制台「API & SDK」下载的 numberAuthSDK_APP_Android_v2(标准版 2.14.24)
+    implementation (name: 'auth_number_product-2.14.24-log-online-standard-cuum-release', ext: 'aar')
+    implementation (name: 'logger-2.2.2-release', ext: 'aar')
+    implementation (name: 'main-2.2.3-release', ext: 'aar')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 阿里云号码认证 SDK 授权页使用的第三方/内部域名允许明文(与官方 Demo 同款配置,SDK 内部请求需要) -->
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
@@ -54,6 +56,18 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- 阿里云号码认证(一键登录):SDK 授权页。
+             主题 @style/authsdk_activity_dialog 由 aar 自带;screenOrientation 必须 "behind"(官方要求,
+             窗口模式指定明确方向在 Android 8 会 crash);launchMode singleTop 防重复唤起。 -->
+        <activity
+            android:configChanges="orientation|keyboardHidden|screenSize|uiMode|fontScale"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:name="com.mobile.auth.gatewayauth.LoginAuthActivity"
+            android:screenOrientation="behind"
+            android:theme="@style/authsdk_activity_dialog" />
+
     </application>
 
     <!-- Permissions -->
@@ -62,4 +76,6 @@
     <!-- 语音消息录制(VoiceRecorderPlugin) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- 号码认证:SDK 检测 SIM/运营商(官方标注为可选权限;声明后更稳,Play 商店会标注) -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 </manifest>

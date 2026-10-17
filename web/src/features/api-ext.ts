@@ -186,6 +186,25 @@ export const msgExt = {
   starred: (token: string) => req<{ ok: true; starred: StarredItem[] }>('/chat/starred', { token }),
 };
 
+/** 号码认证一键登录(平台无关端点,iOS 已在生产验证;Android 由 PnsAuth 原生插件出 spToken 后复用)
+ *  服务端 POST /pns/phone-check:SpToken → 阿里云 GetMobile 换号 → 老号登录/新号自动注册 → 返回 JWT。
+ *  响应字段与 iOS APIClient.phoneCheck 逐字对齐(含 nickname)。
+ */
+export const pnsExt = {
+  /**
+   * 一键登录换号。spToken 由原生 SDK 授权页产出(一次性,几秒内有效,勿重试/勿落日志)。
+   * 400 bad_token = 长度校验失败;400 token_invalid = 运营商侧无效;502 pns_upstream_error = 上游故障。
+   */
+  phoneCheck: (body: {
+    spToken: string;
+    handle?: string;
+    deviceId?: string;
+    ed25519Pub?: string;
+    ecdhPub?: string;
+  }) =>
+    req<{ ok: true; token: string; sessionId: string; user: { id: number; handle: string | null; nickname: string | null } }>('/pns/phone-check', { body }),
+};
+
 /* ---------------- 工具 ---------------- */
 
 /** 头像缓存(版本号 key),避免重复下载 */

@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { authApi } from '../api';
+import { pnsExt } from '../features/api-ext';
 import { useAuth } from '../auth';
 import { ensureIdentityKeys } from '../crypto/keys';
+import { pnsAvailable, pnsNativeShell, pnsGetLoginToken } from '../mobile/pns-auth';
 
 type Mode = 'sms' | 'email';
 
@@ -20,6 +22,42 @@ export default function Login() {
   const [sending, setSending] = useState(false);
   const [submitIntent, setSubmitIntent] = useState<null | 'login' | 'register'>(null);
   const submitting = submitIntent !== null;
+  const [pnsOk, setPnsOk] = useState(false); // 本端是否可用一键登录(原生壳 + SDK 可用)
+  const [oneKeyBusy, setOneKeyBusy] = useState(false);
+
+  useEffect(() => {
+    if (!pnsNativeShell()) return;
+    let alive = true;
+    pnsAvailable().then((a) => { if (alive) setPnsOk(a); });
+    return () => { alive = false; };
+  }, []);
+
+  /** 本机号码一键登录:原生 SDK 授权页 → spToken → 服务端 GetMobile 换号 → 登录/自动注册 */
+  const oneKeyLogin = async () => {
+    setErr('');
+    setOneKeyBusy(true);
+    try {
+      const identity = await ensureIdentityKeys();
+      const { token: spToken } = await pnsGetLoginToken();
+      const resp = await pnsExt.phoneCheck({
+        spToken,
+        deviceId: identity.deviceId,
+        ed25519Pub: identity.ed25519Pub,
+        ecdhPub: identity.ecdhPub,
+      });
+      login({ token: resp.token, sessionId: resp.sessionId, userId: resp.user.id, handle: resp.user.handle ?? undefined, deviceId: identity.deviceId });
+      await refreshIdentity();
+      nav(next);
+    } catch (e) {
+      const msg = (e as Error).message || '';
+      setErr(msg === 'pns_upstream_error' ? '一键登录暂时不可用,请用下方验证码登录'
+        : msg === 'token_invalid' ? '号码验证失败,请用下方验证码登录'
+        : msg === 'banned' ? '账号已被封禁'
+        : msg ? `一键登录失败: ${msg}` : '一键登录失败');
+    } finally {
+      setOneKeyBusy(false);
+    }
+  };
 
   const sendCode = async () => {
     setErr('');
@@ -81,6 +119,22 @@ export default function Login() {
       </div>
 
       <div className="field">
+        {mode === 'sms' && pnsOk && (
+          <>
+            <label>本机号码</label>
+            <button
+              className="btn btn-primary"
+              style={{ width: '100%', marginBottom: 10 }}
+              onClick={oneKeyLogin}
+              disabled={oneKeyBusy || submitting}
+            >
+              {oneKeyBusy ? '正在唤起授权页…' : '本机号码一键登录'}
+            </button>
+            <p className="hint" style={{ marginTop: -6, marginBottom: 10 }}>
+              需插 SIM 卡 + 开启蜂窝网络；运营商授权页确认后自动登录，无需记忆验证码。
+            </p>
+          </>
+        )}
         <label>{mode === 'sms' ? '手机号码' : '邮箱地址'}</label>
         <input
           className="input"

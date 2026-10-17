@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  阿里云号码认证 SDK 所需:运营商内部域名允许明文(与官方 Demo 同款配置)。
+  仅白名单域名放行,App 自身流量仍全部走 https://chat.linminhao.top(Capacitor androidScheme=https)。
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">enrichgw.10010.com</domain>
+        <domain includeSubdomains="true">onekey.cmpassport.com</domain>
+        <domain includeSubdomains="true">m.aliyun.com</domain>
+    </domain-config>
+</network-security-config>
