@@ -6,7 +6,9 @@ import { logger } from './logger.js';
 // 规避 NodeNext ESM 解析差异。类型以最小调用面声明。
 const require = createRequire(import.meta.url);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const DysmsapiCtor: any = require('@alicloud/dysmsapi20170525').default;
+const DysmsapiMod: any = require('@alicloud/dysmsapi20170525');
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const DysmsapiCtor: any = DysmsapiMod.default;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const DmCtor: any = require('@alicloud/dm20151123').default;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,7 +46,7 @@ function newMailClient(): MailClient {
  * 凭证仅来自环境变量/config/env.json,绝不进入前端或代码仓库。
  */
 
-export async function sendSmsCode(phone: string, code: string): Promise<SendResult> {
+export async function sendSmsCode(phone: string, code: string, min: number = 5): Promise<SendResult> {
   if (!config.alibabaKeyId || !config.alibabaKeySecret) {
     logger.error('sms_not_configured', { reason: 'missing access key' });
     return { ok: false, error: 'sms_not_configured' };
@@ -54,12 +56,13 @@ export async function sendSmsCode(phone: string, code: string): Promise<SendResu
     return { ok: false, error: 'sms_not_configured' };
   }
   try {
-    const resp = await newSmsClient().sendSms({
+    const req = new DysmsapiMod.SendSmsRequest({
       phoneNumbers: phone,
       signName: config.smsSignName,
       templateCode: config.smsTemplateCode,
-      templateParam: JSON.stringify({ code }),
+      templateParam: JSON.stringify({ code, min }) /* min MUST match CODE_TTL_MS (5min) in otp.js; channels.js cannot import otp.js (circular) */,
     });
+    const resp = await newSmsClient().sendSms(req);
     if (resp.body?.code === 'OK') {
       return { ok: true };
     }

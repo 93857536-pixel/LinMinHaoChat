@@ -14,6 +14,9 @@ struct DiscoverTab: View {
     @State private var showInviteCreate = false
     @State private var joinLink = ""
     @State private var joinTarget: JoinTarget?
+    // 服务器延迟检测(「其他」分组):对 /health 多次 HTTP 往返取平均,评估当前网络到服务器的延迟
+    @State private var serverLatencyMs: Int?
+    @State private var measuringLatency = false
 
     var body: some View {
         NavigationStack {
@@ -71,9 +74,31 @@ struct DiscoverTab: View {
                     Text("邀请链接需在 App 内粘贴打开(系统链接跳转也支持,见「我的」)。")
                 }
 
-                Section("其他") {
+                Section {
                     LabeledContent("后端服务", value: appState.isConnected ? "已连接" : "网络断开")
                     LabeledContent("连接状态", value: appState.connectionStatus.rawValue)
+                    HStack(spacing: 10) {
+                        Label("服务器延迟", systemImage: "timer")
+                        Spacer()
+                        if measuringLatency {
+                            ProgressView()
+                        } else if let ms = serverLatencyMs {
+                            Text(ms < 1000 ? "\(ms) ms" : String(format: "%.1f s", Double(ms) / 1000.0))
+                                .font(.body.monospacedDigit())
+                                .foregroundStyle(latencyTone)
+                        } else {
+                            Button("检测延迟") { measureServerLatency() }
+                                .font(.subheadline)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { measureServerLatency() }
+                } header: {
+                    Text("其他")
+                } footer: {
+                    if let ms = serverLatencyMs {
+                        Text("上次检测:\(msText(ms)),对 /health 连续 3 次往返取平均,点击「服务器延迟」行可重新测量。")
+                    }
                 }
             }
             .listStyle(.insetGrouped)
@@ -114,5 +139,51 @@ struct DiscoverTab: View {
             .foregroundStyle(.white)
             .frame(width: 40, height: 40)
             .background(color.gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    // MARK: 服务器延迟检测
+    /// 延迟配色:<150ms 绿,<400ms 橙,否则红
+    private var latencyTone: Color {
+        guard let ms = serverLatencyMs else { return .primary }
+        if ms < 150 { return .green }
+        if ms < 400 { return .orange }
+        return .red
+    }
+
+    private func msText(_ ms: Int) -> String {
+        ms < 1000 ? "\(ms) ms" : String(format: "%.1f s", Double(ms) / 1000.0)
+    }
+
+    /// 对 /health 连测 3 次 HTTP 往返取平均(排除首次冷连接,跳过第 1 次),评估到服务器延迟
+    private func measureServerLatency() {
+        guard !measuringLatency else { return }
+        measuringLatency = true
+        serverLatencyMs = nil
+        Task { @MainActor in
+            var samples: [Int] = []
+            for _ in 0..<3 {
+                let t0 = Date()
+                do {
+                    struct HealthResult: Decodable { let ok: Bool }
+                    let _: HealthResult = try await APIClient.request("/health")
+                    samples.append(max(0, Int(Date().timeIntervalSince(t0) * 1000)))
+                } catch {
+                    // 单次失败不中断,记一个大值拉高平均以提示网络差
+                    samples.append(max(0, Int(Date().timeIntervalSince(t0) * 1000)))
+                }
+            }
+            // 去掉最快一帧冷启动影响:3 个样本取后 2 个平均(即跳过 min)
+            let avg: Int
+            if samples.count == 3 {
+                let sorted = samples.sorted()
+                avg = Int((Double(sorted[1]) + Double(sorted[2])) / 2.0)
+            } else if !samples.isEmpty {
+                avg = samples.reduce(0, +) / samples.count
+            } else {
+                avg = 0
+            }
+            serverLatencyMs = avg
+            measuringLatency = false
+        }
     }
 }
