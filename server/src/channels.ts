@@ -5,30 +5,37 @@ import { logger } from './logger.js';
 // 阿里云 SDK 为 CJS 转译产物(exports.default = Client),用 createRequire 运行时加载,
 // 规避 NodeNext ESM 解析差异。类型以最小调用面声明。
 const require = createRequire(import.meta.url);
+// 短信走号码认证(DYPNS)的短信认证服务:SendSmsVerifyCode/CheckSmsVerifyCode。
+// ⚠️ 不要用独立短信服务 dysmsapi 的 SendSms——签名/模板是配在号码认证控制台
+// 「短信认证参数配置」的(如 100001+北京恒创联众,预置不可自定义),dysmsapi
+// 查不到会报 isv.SMS_TEMPLATE_ILLEGAL。两个是不同服务/不同 endpoint。
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const DysmsapiMod: any = require('@alicloud/dysmsapi20170525');
+const DypnsMod: any = require('@alicloud/dypnsapi20170525');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const DysmsapiCtor: any = DysmsapiMod.default;
+const DypnsCtor: any = DypnsMod.default;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const DmCtor: any = require('@alicloud/dm20151123').default;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const OpenApiConfig: any = require('@alicloud/openapi-client').Config;
 
-interface SendResult { ok: boolean; error?: string }
+interface SendResult { ok: boolean; error?: string; code?: string }
 
 interface SmsClient {
-  sendSms(req: { phoneNumbers: string; signName: string; templateCode: string; templateParam: string }): Promise<{ body?: { code?: string; message?: string } }>;
+  sendSmsVerifyCode(req: {
+    phoneNumber: string; signName: string; templateCode: string; templateParam: string;
+    codeLength: number; returnVerifyCode: boolean;
+  }): Promise<{ body?: { code?: string; message?: string; success?: boolean; model?: { verifyCode?: string; outId?: string } } }>;
 }
 interface MailClient {
   singleSendMail(req: { accountName: string; fromAlias?: string; addressType: number; replyToAddress: boolean; toAddress: string; subject: string; textBody: string }): Promise<{ body?: { requestId?: string } }>;
 }
 
 function newSmsClient(): SmsClient {
-  return new DysmsapiCtor(new OpenApiConfig({
+  return new DypnsCtor(new OpenApiConfig({
     accessKeyId: config.alibabaKeyId,
     accessKeySecret: config.alibabaKeySecret,
-    endpoint: 'dysmsapi.aliyuncs.com',
-  })) as SmsClient;
+    endpoint: 'dypnsapi.aliyuncs.com',
+  })) as unknown as SmsClient;
 }
 
 function newMailClient(): MailClient {
@@ -46,7 +53,7 @@ function newMailClient(): MailClient {
  * 凭证仅来自环境变量/config/env.json,绝不进入前端或代码仓库。
  */
 
-export async function sendSmsCode(phone: string, code: string, min: number = 5): Promise<SendResult> {
+export async function sendSmsCode(phone: string, min: number = 5): Promise<SendResult> {
   if (!config.alibabaKeyId || !config.alibabaKeySecret) {
     logger.error('sms_not_configured', { reason: 'missing access key' });
     return { ok: false, error: 'sms_not_configured' };
@@ -56,17 +63,23 @@ export async function sendSmsCode(phone: string, code: string, min: number = 5):
     return { ok: false, error: 'sms_not_configured' };
   }
   try {
-    const req = new DysmsapiMod.SendSmsRequest({
-      phoneNumbers: phone,
+    // 号码认证(DYPNS)短信:平台生成验证码并发送——templateParam 用占位符 ##code##,
+    // 平台返回 model.verifyCode(6 位),服务端存它的 HMAC 供校验。
+    // min 与 otp.js CODE_TTL_MS(5min)对齐;channels 不能 import otp(循环依赖),写死 5。
+    const req = new DypnsMod.SendSmsVerifyCodeRequest({
+      phoneNumber: phone,
       signName: config.smsSignName,
       templateCode: config.smsTemplateCode,
-      templateParam: JSON.stringify({ code, min }) /* min MUST match CODE_TTL_MS (5min) in otp.js; channels.js cannot import otp.js (circular) */,
+      templateParam: JSON.stringify({ code: '##code##', min: String(min) }),
+      codeLength: 6,
+      returnVerifyCode: true,
     });
-    const resp = await newSmsClient().sendSms(req);
-    if (resp.body?.code === 'OK') {
-      return { ok: true };
+    const resp = await newSmsClient().sendSmsVerifyCode(req);
+    const body = resp.body;
+    if (body?.code === 'OK' && body?.model?.verifyCode) {
+      return { ok: true, code: body.model.verifyCode };
     }
-    logger.error('sms_send_failed', { aliyunCode: resp.body?.code, message: resp.body?.message });
+    logger.error('sms_send_failed', { aliyunCode: body?.code, message: body?.message });
     return { ok: false, error: 'sms_failed' };
   } catch (e) {
     logger.error('sms_send_exception', { message: (e as Error).message });

@@ -30,20 +30,28 @@ export async function issueCode(target: string, type: 'sms' | 'email'): Promise<
     return { ok: false, error: 'rate_limited', retryAfterSec: Math.ceil((60_000 - (Date.now() - recent.created_at)) / 1000) };
   }
 
-  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
   const now = Date.now();
+  const masked = type === 'sms' ? maskPhone(target) : maskEmail(target);
+
+  if (type === 'sms' && config.verifyChannel === 'alibaba') {
+    // 号码认证(DYPNS)短信:平台生成验证码并发送,返回 verifyCode——
+    // 先发送拿到平台码,再入库(HMAC 存储,校验侧 verifyCode 不变)。
+    // 发送失败不入库,保留下次重试机会;平台 60s 频率限制与本地 60s 检查对齐。
+    const sent = await sendSmsCode(target);
+    if (!sent.ok || !sent.code) return { ok: false, error: sent.error || 'sms_failed' };
+    db.prepare('INSERT INTO otp_codes (target_hash, type, code_hash, created_at, expires_at) VALUES (?,?,?,?,?)')
+      .run(targetHash(target, type), type, otpHmac(sent.code), now, now + CODE_TTL_MS);
+    logger.info('sms_code_issued', { target: masked });
+    return { ok: true };
+  }
+
+  // dev 短信 / 邮箱:服务端生成验证码
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
   db.prepare('INSERT INTO otp_codes (target_hash, type, code_hash, created_at, expires_at) VALUES (?,?,?,?,?)')
     .run(targetHash(target, type), type, otpHmac(code), now, now + CODE_TTL_MS);
 
-  // 通道发送。dev 模式:验证码写入安全日志(仅测试;生产必须配置真实通道)
-  const masked = type === 'sms' ? maskPhone(target) : maskEmail(target);
   if (type === 'sms') {
-    if (config.verifyChannel !== 'alibaba') {
-      await appendDevOtp(type, masked, code, now);
-    } else {
-      const sent = await sendSmsCode(target, code);
-      if (!sent.ok) return { ok: false, error: sent.error };
-    }
+    await appendDevOtp(type, masked, code, now);
   } else {
     if (config.mailChannel === 'dev') {
       await appendDevOtp(type, masked, code, now);
