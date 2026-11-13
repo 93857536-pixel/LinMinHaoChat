@@ -8,13 +8,7 @@
     },
     {
       "name": "release",
-      "debuggable": false,
-      "arkOptions": {
-        "strictMode": {
-          "caseSensitiveCheck": true,
-          "useStrictTypeCheck": true
-        }
-      }
+      "debuggable": false
     }
   ]
 }

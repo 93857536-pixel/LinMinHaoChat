@@ -1,4 +1,16 @@
 {
   "modelVersion": "5.0.0",
-  "plugins": []
+  "dependencies": {},
+  "execution": {
+    "analyze": false,
+    "daemon": true,
+    "incremental": true,
+    "parallel": true,
+    "typeCheck": false,
+    "optimizationStrategy": "memory"
+  },
+  "logging": {
+    "level": "info"
+  },
+  "nodeOptions": {}
 }

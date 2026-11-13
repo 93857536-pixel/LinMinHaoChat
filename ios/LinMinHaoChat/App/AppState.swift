@@ -142,6 +142,11 @@ final class AppState: ObservableObject {
                 ecdhPub: keys.ecdhPub
             )
         }
+
+        // 登录后补拉完整资料:logout 会清空本地缓存的头像版本号与实名状态,
+        // 仅存 token/userId/handle/nickname 会导致退出重登后头像不显示、
+        // 实名要手动进一次页面才刷新。此处后台拉 /auth/me 对齐服务端。
+        Task { await refreshProfile() }
     }
 
     /// 后台刷新账号资料(启动时/从服务端确认最新昵称)

@@ -1,0 +1,161 @@
+# LinMinHao Nginx for Windows
+# 2026-10-21 split:
+#   - chat.linminhao.top / wce.linminhao.top -> LinMinHaoChat SPA (primary chat entry)
+#   - linminhao.top -> official site (+ legacy /api /ws /hermes-cloud for old native apps)
+#   - www.linminhao.top -> 301 https://linminhao.top
+worker_processes  1;
+error_log  logs/error.log warn;
+pid        logs/nginx.pid;
+
+events {
+    worker_connections  1024;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    sendfile        on;
+    keepalive_timeout  65;
+    client_max_body_size 12m;
+    server_tokens  off;
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+    # ---- www -> apex ----
+    server {
+        listen 80;
+        server_name www.linminhao.top;
+        return 301 https://linminhao.top$request_uri;
+    }
+
+    # ---- chat subdomains: LinMinHaoChat SPA ----
+    server {
+        listen 80;
+        server_name chat.linminhao.top wce.linminhao.top;
+
+        location ^~ /.well-known/acme-challenge/ {
+            root C:/opt/linminhao/acme;
+        }
+
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy no-referrer always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://linminhao.top wss://linminhao.top ws://chat.linminhao.top wss://chat.linminhao.top; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" always;
+
+        root C:/opt/linminhao/web/dist;
+        index index.html;
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+        location ~* \.(js|css|png|jpg|jpeg|gif|svg|ico|webp|woff2?)$ {
+            expires 7d;
+            add_header Cache-Control "public, immutable";
+        }
+
+        location /api/ {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_connect_timeout 10s;
+            proxy_read_timeout 60s;
+        }
+
+        location /ws {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+        }
+
+        location = /healthz {
+            proxy_pass http://127.0.0.1:3000/api/health;
+        }
+    }
+
+    # ---- root domain: official site ----
+    server {
+        listen 80;
+        server_name linminhao.top;
+
+        location ^~ /.well-known/acme-challenge/ {
+            root C:/opt/linminhao/acme;
+        }
+
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy no-referrer always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://linminhao.top wss://linminhao.top ws://chat.linminhao.top wss://chat.linminhao.top; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" always;
+
+        # Legacy short links: /t/<id> /i/<id> -> chat subdomain (keep #k= fragment)
+        location ~ ^/(t|i)/ {
+            return 301 https://chat.linminhao.top$request_uri;
+        }
+
+        root C:/opt/linminhao/official;
+        index index.html;
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+        # Official site: cache images only. Keep html/js/css short-cached so
+        # site updates propagate fast (files are not hash-named).
+        location ~* \.(png|jpg|jpeg|gif|svg|ico|webp)$ {
+            expires 7d;
+            add_header Cache-Control "public";
+        }
+        location ~* \.(js|css|html)$ {
+            expires 10m;
+            add_header Cache-Control "public";
+        }
+
+        # Legacy: older native apps still hit the root domain for API/WS.
+        # Keep until all clients are on chat.linminhao.top.
+        location /api/ {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_connect_timeout 10s;
+            proxy_read_timeout 60s;
+        }
+
+        location /hermes-cloud/ {
+            client_max_body_size 512m;
+            proxy_pass http://127.0.0.1:8084;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_connect_timeout 10s;
+            proxy_send_timeout 300s;
+            proxy_read_timeout 300s;
+        }
+
+        location /ws {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+        }
+
+        location = /healthz {
+            proxy_pass http://127.0.0.1:3000/api/health;
+        }
+    }
+}

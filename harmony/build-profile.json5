@@ -1,35 +1,17 @@
-// 鸿蒙工程 build-profile(构建变体与签名)
 {
   "app": {
     "products": [
       {
         "name": "default",
-        "signingConfig": "default",
-        "targetSdkVersion": "HarmonyOS-12",
-        "compatibleSdkVersion": "HarmonyOS-12"
-      }
-    ],
-    "signingConfigs": [
-      {
-        // DevEco「本地自动签名」生成: 工具链首次 Build 时写入调试证书+ profile。
-        // 本机无 DevEco 时此处留空, 由用户装 DevEco/CLI 后自动签名(debug hap), 或用企业证书出 release。
-        "name": "default",
-        "type": "HarmonyOS",
-        "signingCer": "",
-        "storeFile": "",
-        "storePassword": "",
-        "keyAlias": "",
-        "keyPassword": "",
-        "profile": ""
+        "compileSdkVersion": 12,
+        "compatibleSdkVersion": 12
       }
     ]
   },
   "modules": [
     {
       "name": "entry",
-      "srcPath": "./entry",
-      "buildOption": {},
-      "dependencies": []
+      "srcPath": "./entry"
     }
   ]
 }

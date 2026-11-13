@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinMinHao — 端到端加密聊天 · 个人技术生态</title>
+<meta name="description" content="LinMinHaoChat:我自己设计并部署的跨平台端到端加密即时通讯。密钥从不出设备,服务器只存密文。iOS / Android / 鸿蒙 / Windows / macOS / Web 全平台。">
+<meta property="og:title" content="LinMinHao — 端到端加密聊天">
+<meta property="og:description" content="自建 E2EE 即时通讯 + 个人开源工具生态">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://linminhao.top/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='%2305060a'/%3E%3Ctext x='32' y='42' font-family='monospace' font-size='30' font-weight='700' fill='url(%23g)' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E">
+<script src="/redirect.js"></script>
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+
+<canvas id="net" aria-hidden="true"></canvas>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+
+<!-- ============ NAV ============ -->
+<header class="nav" id="nav">
+  <div class="nav-inner">
+    <a class="brand" href="#top"><span class="brand-mark">LM</span><span class="brand-text">LINMINHAO</span></a>
+    <nav class="nav-links">
+      <a href="#features">特性</a>
+      <a href="#products">产品</a>
+      <a href="#security">安全</a>
+      <a href="https://github.com/93857536-pixel" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+    <a class="btn btn-primary btn-sm" href="https://chat.linminhao.top" target="_blank" rel="noopener">开始聊天</a>
+  </div>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="hero" id="top">
+  <div class="container">
+    <div class="overline"><span class="dot"></span>SELF-HOSTED · E2EE · MULTI-PLATFORM</div>
+    <h1>把聊天，<br>变成<span class="grad">一件私密的事</span></h1>
+    <p class="sub">
+      <strong>LinMinHaoChat</strong> —— 我自己设计、编码并部署的跨平台即时通讯系统。<br>
+      密钥从不出设备，服务器只存密文。iOS / Android / 鸿蒙 / Windows / macOS / Web 全平台，
+      免注册即可开聊，或一键登录同步你的账号。
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://chat.linminhao.top" target="_blank" rel="noopener">开始聊天 · 免注册 <span class="arrow">→</span></a>
+      <a class="btn btn-ghost" href="https://github.com/93857536-pixel" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+    <div class="status-row" id="statusPill" data-state="pending">
+      <span class="dot"></span>
+      <span class="mono">chat.linminhao.top · <span class="val">connecting…</span></span>
+      <span class="sep"></span>
+      <span class="mono">AES-256-GCM ✓</span>
+      <span class="sep"></span>
+      <span class="mono">WSS ✓</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FEATURES ============ -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="sec-head reveal">
+      <div class="overline">FEATURES</div>
+      <h2>为隐私设计，为效率打磨</h2>
+      <p class="sec-sub">每一个功能都是真实使用场景里长出来的，不是 PPT 上的名词。</p>
+    </div>
+    <div class="grid g3">
+      <div class="card reveal">
+        <div class="card-ico">🔐</div>
+        <h3>端到端加密</h3>
+        <p>ECDH P-256 密钥协商 + AES-256-GCM 传输。服务器只落盘密文，连我自己都读不了你的消息。</p>
+      </div>
+      <div class="card reveal">
+        <div class="card-ico">⚡</div>
+        <h3>一键登录</h3>
+        <p>运营商号码认证，本机号码直接进，没有密码要记。手机号即身份，登录态存设备 Keychain。</p>
+      </div>
+      <div class="card reveal">
+        <div class="card-ico">📱</div>
+        <h3>全平台互通</h3>
+        <p>iOS / Android / 鸿蒙 / Windows / macOS / Web 同一套账号、同一套房间，消息处处续上。</p>
+      </div>
+      <div class="card reveal">
+        <div class="card-ico">🔥</div>
+        <h3>刷新即焚聊天</h3>
+        <p>临时会话密钥藏在分享链接的 fragment 里，从不经过服务器。关掉标签页，一切灰飞烟灭。</p>
+      </div>
+      <div class="card reveal">
+        <div class="card-ico">🏠</div>
+        <h3>自建自托管</h3>
+        <p>整套服务跑在我自己的云服务器上：Cloudflare 隧道 + nginx + Node，数据主权完全在我手里。</p>
+      </div>
+      <div class="card reveal">
+        <div class="card-ico">🪪</div>
+        <h3>实名可选</h3>
+        <p>实名认证走云市场二要素核验，证书数据只留单向指纹，姓名证号不出服务器、不可逆。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PRODUCTS ============ -->
+<section class="section" id="products">
+  <div class="container">
+    <div class="sec-head reveal">
+      <div class="overline">PRODUCTS</div>
+      <h2>围绕隐私与效率的工具生态</h2>
+      <p class="sec-sub">主产品 + 几个我长期维护的开源工具，全部可以自取、自部署。</p>
+    </div>
+    <div class="grid g2">
+      <div class="card card-product reveal">
+        <div class="card-ico big">💬</div>
+        <h3>LinMinHaoChat <span class="tag-main">主产品</span></h3>
+        <p>端到端加密即时通讯：账号聊天 + 邀请聊天 + 临时聊天，好友 / 群组 / 附件 / 语音 / 收藏，iOS、Android、鸿蒙原生客户端 + Web。</p>
+        <div class="chips"><span>iOS</span><span>Android</span><span>鸿蒙</span><span>Windows</span><span>macOS</span><span>Web</span></div>
+        <div class="card-cta">
+          <a class="btn btn-primary btn-sm" href="https://chat.linminhao.top" target="_blank" rel="noopener">打开聊天 →</a>
+          <a class="btn btn-ghost btn-sm" href="https://github.com/93857536-pixel/LinMinHaoChat" target="_blank" rel="noopener">下载 App</a>
+        </div>
+      </div>
+      <div class="card card-product reveal">
+        <div class="card-ico big">📤</div>
+        <h3>WeChatExporter</h3>
+        <p>本地导出微信聊天记录：Swift / WPF / Tauri 三端，自动检测微信 4.x 数据库、提取密钥、SQLCipher4 解密，全程不出本机。</p>
+        <div class="chips"><span>macOS</span><span>Windows</span><span>Linux</span></div>
+        <div class="card-cta">
+          <a class="btn btn-ghost btn-sm" href="https://github.com/93857536-pixel/WeChatExporter" target="_blank" rel="noopener">GitHub ↗</a>
+        </div>
+      </div>
+      <div class="card card-product reveal">
+        <div class="card-ico big">🐧</div>
+        <h3>QQExporter</h3>
+        <p>NTQQ 聊天记录导出：Rust + Tauri 三平台，SQLCipher4（AES-256-CBC）解密 + 40800 protobuf 解析，导出为可读文本。</p>
+        <div class="chips"><span>Rust</span><span>Tauri</span></div>
+        <div class="card-cta">
+          <a class="btn btn-ghost btn-sm" href="https://github.com/93857536-pixel/QQExporter" target="_blank" rel="noopener">GitHub ↗</a>
+        </div>
+      </div>
+      <div class="card card-product reveal">
+        <div class="card-ico big">⏰</div>
+        <h3>HermesKeeper</h3>
+        <p>macOS 菜单栏小工具：AI 代理跑任务时自动阻止合盖睡眠，任务结束 5 分钟无人操作自动熄屏。Swift 原生，约 90KB。</p>
+        <div class="chips"><span>Swift</span><span>macOS</span></div>
+        <div class="card-cta">
+          <a class="btn btn-ghost btn-sm" href="https://github.com/93857536-pixel/HermesKeeper" target="_blank" rel="noopener">GitHub ↗</a>
+        </div>
+      </div>
+    </div>
+    <a class="more-link reveal" href="https://github.com/93857536-pixel" target="_blank" rel="noopener">更多开源项目，在 GitHub →</a>
+  </div>
+</section>
+
+<!-- ============ SECURITY ============ -->
+<section class="section" id="security">
+  <div class="container">
+    <div class="sec-head reveal">
+      <div class="overline">SECURITY</div>
+      <h2>不靠承诺，靠架构</h2>
+      <p class="sec-sub">安全不是免责声明里的一句话，而是协议里每一层的设计选择。</p>
+    </div>
+    <div class="terminal reveal" id="terminal">
+      <div class="term-bar"><i></i><i></i><i></i><span class="term-title">lmh@server:~</span></div>
+      <div class="term-body" id="termBody"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CTA ============ -->
+<section class="section cta-band">
+  <div class="container reveal">
+    <h2 class="cta-title">准备好开始了吗？</h2>
+    <p class="sec-sub">打开链接就是聊天，不需要注册。想用账号的话，本机号码一键登录。</p>
+    <a class="btn btn-primary btn-lg" href="https://chat.linminhao.top" target="_blank" rel="noopener">打开 chat.linminhao.top →</a>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <div class="mono dim">© 2026 LINMINHAO · 自建于 阿里云 ECS + Cloudflare</div>
+    <div class="footer-links">
+      <a href="https://chat.linminhao.top" target="_blank" rel="noopener">聊天入口</a>
+      <a href="https://github.com/93857536-pixel" target="_blank" rel="noopener">GitHub</a>
+      <a href="#top">回到顶部 ↑</a>
+    </div>
+  </div>
+</footer>
+
+<script src="/site.js" defer></script>
+</body>
+</html>
