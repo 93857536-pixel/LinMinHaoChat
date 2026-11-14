@@ -48,6 +48,11 @@ final class AppState: ObservableObject {
     /// 网络监测定时器
     private var networkTimer: Timer?
     private var networkTask: Task<Void, Never>?
+    /// 有未读的房间数(用于角标)
+    @Published var unreadRoomCount = 0
+
+    /// 全部房间的总未读数(sum of all room.unread)
+    var unreadTotalRooms: Int { unreadRoomCount }
 
     /// 当前是否有账号登录态(Keychain 中持久化 token)
     @Published var chatListVersion = 0   // 进入聊天后自增,通知列表刷新未读/预览

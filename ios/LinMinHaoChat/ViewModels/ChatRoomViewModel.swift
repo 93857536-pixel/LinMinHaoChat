@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import SwiftUI
+import UserNotifications
 
 /// 账号聊天逻辑 —— 与 web Chat.tsx 行为对齐:
 /// 拉密钥包(我的设备)→ ECDH 解包会话密钥 → 拉历史 → WS(jwt)订阅房间 → 发消息(seq 冲突自愈)
@@ -132,6 +133,16 @@ final class ChatRoomViewModel: ObservableObject {
         }
         // 更新聊天列表预览(本地缓存,不上传)
         updatePreview()
+        // 非自己发的消息:通知角标+系统通知(前台不弹窗,只角标)
+        let otherMsgs = newItems.filter { !$0.mine }
+        if !otherMsgs.isEmpty && AppState.shared.isBackgrounded == false {
+            // App 在前台但不在当前房间:发通知
+            Task { await NotificationManager.shared.onNewMessage(
+                inRoom: roomId,
+                senderLabel: otherMsgs.first?.label,
+                text: otherMsgs.first?.text ?? ""
+            ) }
+        }
     }
 
     private func decrypt(_ m: ChatMsg, sessionKey: SymmetricKey) -> DecryptedMsg? {

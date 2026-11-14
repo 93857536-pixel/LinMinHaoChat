@@ -246,6 +246,8 @@ struct ChatView: View {
                 } else {
                     roomLabel = "群聊"
                 }
+                // 清除本房间通知角标
+                NotificationManager.shared.clearBadge()
             } catch { /* 静默 */ }
         }
         .alert("错误", isPresented: .constant(errorMessage != nil)) {
