@@ -612,12 +612,10 @@ struct CredentialBindSheet: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     // 验证码输入与发送按钮:手机/邮箱绑定都需要(服务端统一校验 6 位码)
+                    // 行样式跟随 Form 默认(与「输入邮箱/手机号」行一致),
+                    // 早期曾给这两行单独加 clear 背景+窄框导致视觉割裂(2026-11-14 用户指出)
                     TextField("验证码", text: $code)
                         .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 120)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
                     HStack {
                         Button(action: { Task { await sendCode() } }) {
                             Text(countdown > 0 ? "\(countdown)s后重试" : "发送验证码")
@@ -627,8 +625,6 @@ struct CredentialBindSheet: View {
                         Spacer()
                         if isSending { ProgressView() }
                     }
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
                 } header: {
                     Text("输入要绑定的\(isEmail ? "邮箱" : "手机号")")
                 } footer: {
