@@ -389,7 +389,6 @@ struct MeTab: View {
 struct AccountDetail: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
-    @State private var showNicknameEdit = false
     @State private var showBindPhone = false
     @State private var showBindEmail = false
 
@@ -454,18 +453,6 @@ struct AccountDetail: View {
                 }
             }
 
-            Section("账号名称") {
-                Button {
-                    showNicknameEdit = true
-                } label: {
-                    HStack {
-                        Image(systemName: "pencil")
-                        Text("修改账号名称")
-                        Spacer()
-                        Text(appState.displayName).foregroundStyle(.secondary)
-                    }
-                }
-            }
             Section {
                 Button("退出登录", role: .destructive) {
                     appState.logout()
@@ -475,10 +462,6 @@ struct AccountDetail: View {
         }
         .navigationTitle("账号与安全")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showNicknameEdit) {
-            NicknameEditSheet()
-                .environmentObject(appState)
-        }
         .sheet(isPresented: $showBindPhone) {
             CredentialBindSheet(type: "sms", title: "绑定手机号")
                 .environmentObject(appState)
