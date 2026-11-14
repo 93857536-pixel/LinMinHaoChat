@@ -14,6 +14,8 @@ struct LoginView: View {
     @State private var code = ""
     @State private var handle = ""          // 注册可选昵称
     @State private var isEmail = true
+    /// 登录流程进行中(防止 dismiss 动画期间渲染出「已登录」卡片)
+    @State private var isAuthPending = false
 
     init(preferRegister: Bool = false) {
         _isRegisterMode = State(initialValue: preferRegister)
@@ -45,7 +47,7 @@ struct LoginView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                if appState.isLoggedIn {
+                if appState.isLoggedIn && !isAuthPending {
                     loggedInCard
                 } else {
                     accountTypePicker
@@ -311,6 +313,7 @@ struct LoginView: View {
     private func submit(register: Bool) async {
         isSubmitting = true
         errorMessage = nil
+        isAuthPending = true
         defer { isSubmitting = false }
         do {
             let identity = try IdentityStore.ensure()
@@ -332,11 +335,16 @@ struct LoginView: View {
             appState.saveAuth(token: r.token, sessionId: r.sessionId,
                               userId: r.user.id, handle: r.user.handle, nickname: r.user.nickname,
                               phoneMasked: r.user.phoneMasked, emailMasked: r.user.emailMasked)
-            // 注册成功后明确告知系统分配的规范账号 ID(不可改)
+            // 注册成功后明确告知系统分配的规范账号 ID(不可改);完成后立即关闭登录页回主页
             if register, let h = r.user.handle {
                 statusMessage = "注册成功 ✓ 账号 ID:\(h)"
             } else {
                 statusMessage = "\(register ? "注册" : "登录")成功 ✓"
+            }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                isAuthPending = false
+                dismiss()
             }
         } catch {
             if let e = error as? ApiError, e.status == 429 {
@@ -344,12 +352,14 @@ struct LoginView: View {
             } else {
                 errorMessage = "\(register ? "注册" : "登录")失败:\(error.localizedDescription)"
             }
+            isAuthPending = false
         }
     }
 
     /// 本机号码一键登录:SDK 弹授权页 → SpToken → 服务端换号登录
     private func pnsLogin() async {
         isPNSLogin = true
+        isAuthPending = true
         errorMessage = nil
         statusMessage = nil
         defer { isPNSLogin = false }
@@ -399,9 +409,9 @@ struct LoginView: View {
                                   userId: r.user.id, handle: r.user.handle, nickname: r.user.nickname,
                                   phoneMasked: r.user.phoneMasked, emailMasked: r.user.emailMasked)
                 statusMessage = "一键登录成功 ✓"
-                // 成功后 1.5s 展示提示,再自动退回上一页(首页),免去手动返回
+                // 登录后直接回主页(0.8s 后 dismiss)
                 Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    try? await Task.sleep(nanoseconds: 800_000_000)
                     dismiss()
                 }
             } catch {
