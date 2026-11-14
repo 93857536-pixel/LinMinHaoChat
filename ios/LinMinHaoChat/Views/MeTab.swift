@@ -593,6 +593,16 @@ struct CredentialBindSheet: View {
 
     private var isEmail: Bool { type == "email" }
 
+    /// 目标输入是否有效:手机号 11 位 / 邮箱含 @ 且带域点(前端轻校验,服务端仍严格校验)
+    private var targetValid: Bool {
+        if isEmail {
+            let parts = target.split(separator: "@")
+            return parts.count == 2 && !parts[0].isEmpty
+                && parts[1].contains(".") && !parts[1].hasPrefix(".") && !parts[1].hasSuffix(".")
+        }
+        return target.count >= 11
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -601,19 +611,24 @@ struct CredentialBindSheet: View {
                         .keyboardType(isEmail ? .emailAddress : .phonePad)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    if !isEmail {
-                        TextField("验证码", text: $code)
-                            .keyboardType(.numberPad)
-                        HStack {
-                            Button(action: { Task { await sendCode() } }) {
-                                Text(countdown > 0 ? "\(countdown)s后重试" : "发送验证码")
-                                    .foregroundColor(countdown > 0 ? .secondary : .blue)
-                            }
-                            .disabled(countdown > 0 || isSending || target.count < 11)
-                            Spacer()
-                            if isSending { ProgressView() }
+                    // 验证码输入与发送按钮:手机/邮箱绑定都需要(服务端统一校验 6 位码)
+                    TextField("验证码", text: $code)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 120)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                    HStack {
+                        Button(action: { Task { await sendCode() } }) {
+                            Text(countdown > 0 ? "\(countdown)s后重试" : "发送验证码")
+                                .foregroundColor(countdown > 0 ? .secondary : .blue)
                         }
+                        .disabled(countdown > 0 || isSending || !targetValid)
+                        Spacer()
+                        if isSending { ProgressView() }
                     }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 } header: {
                     Text("输入要绑定的\(isEmail ? "邮箱" : "手机号")")
                 } footer: {
@@ -636,7 +651,7 @@ struct CredentialBindSheet: View {
                         ProgressView()
                     } else {
                         Button("确认绑定") { Task { await bind() } }
-                            .disabled(target.isEmpty || (code.isEmpty && !isEmail) || isSending)
+                            .disabled(target.isEmpty || !targetValid || code.isEmpty || isSending)
                     }
                 }
             }
