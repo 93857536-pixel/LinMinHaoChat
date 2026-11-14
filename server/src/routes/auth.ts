@@ -109,8 +109,8 @@ authRouter.post('/register', async (req, res) => {
     .run(sessionId, user.id, tokenHash, now, now + SESSION_TTL_MS, String(deviceId || 'default'));
 
   const jwt = await signUserJwt(user.id, pub?.deviceId || 'default');
-  const u = db.prepare('SELECT handle, nickname FROM users WHERE id=?').get(user.id) as { handle: string; nickname: string | null } | undefined;
-  res.json({ ok: true, token: jwt, sessionId, user: { id: user.id, handle: u?.handle, nickname: u?.nickname ?? u?.handle } });
+  const u = db.prepare('SELECT handle, nickname, phone_masked, email_masked FROM users WHERE id=?').get(user.id) as { handle: string; nickname: string | null; phone_masked: string | null; email_masked: string | null } | undefined;
+  res.json({ ok: true, token: jwt, sessionId, user: { id: user.id, handle: u?.handle, nickname: u?.nickname ?? u?.handle, phoneMasked: u?.phone_masked ?? null, emailMasked: u?.email_masked ?? null } });
 });
 
 /** 登录(仅验证码,无需密码) */
@@ -140,6 +140,10 @@ authRouter.post('/login', async (req, res) => {
   if (user.banned) return res.status(403).json({ error: 'banned' });
 
   db.prepare('UPDATE users SET last_login_at=? WHERE id=?').run(Date.now(), user.id);
+  // 自动回填登录凭据掩码:绑定功能上线前注册的老账号 phone_masked/email_masked 为 NULL,
+  // 登录即识别 —— 用本手机号登录成功的账号自动补上该手机号,UI 直接显示已登录号码,无需二次绑定
+  db.prepare(`UPDATE users SET ${type === 'sms' ? 'phone_masked' : 'email_masked'}=? WHERE id=?`)
+    .run(type === 'sms' ? maskPhone(norm) : maskEmail(norm), user.id);
   if (ed25519Pub && ecdhPub) {
     db.prepare(
       `INSERT INTO user_keys (user_id, device_id, ed25519_pub, ecdh_pub, created_at) VALUES (?,?,?,?,?)
@@ -153,8 +157,8 @@ authRouter.post('/login', async (req, res) => {
     .run(sessionId, user.id, tokenHash, Date.now(), Date.now() + SESSION_TTL_MS, String(deviceId || 'default'));
 
   const jwt = await signUserJwt(user.id, String(deviceId || 'default'));
-  const u = db.prepare('SELECT handle, nickname FROM users WHERE id=?').get(user.id) as { handle: string; nickname: string | null } | undefined;
-  res.json({ ok: true, token: jwt, sessionId, user: { id: user.id, handle: u?.handle, nickname: u?.nickname ?? u?.handle } });
+  const u = db.prepare('SELECT handle, nickname, phone_masked, email_masked FROM users WHERE id=?').get(user.id) as { handle: string; nickname: string | null; phone_masked: string | null; email_masked: string | null } | undefined;
+  res.json({ ok: true, token: jwt, sessionId, user: { id: user.id, handle: u?.handle, nickname: u?.nickname ?? u?.handle, phoneMasked: u?.phone_masked ?? null, emailMasked: u?.email_masked ?? null } });
 });
 
 /**

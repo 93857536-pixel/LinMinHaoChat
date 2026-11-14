@@ -100,6 +100,9 @@ final class AppState: ObservableObject {
         if d.object(forKey: ProfileKeys.rnVerifiedAt) != nil {
             realnameVerifiedAt = d.object(forKey: ProfileKeys.rnVerifiedAt) as? Int64
         }
+        // 登录凭据掩码(手机号/邮箱,重启后直接显示,无需二次绑定)
+        phoneMasked = d.string(forKey: ProfileKeys.phoneMasked)
+        emailMasked = d.string(forKey: ProfileKeys.emailMasked)
 
         // 尝试加载身份
         if let keys = try? IdentityStore.load() {
@@ -125,12 +128,16 @@ final class AppState: ObservableObject {
     }
 
     // MARK: - Auth Management
-    func saveAuth(token: String, sessionId: String, userId: Int, handle: String?, nickname: String? = nil) {
+    func saveAuth(token: String, sessionId: String, userId: Int, handle: String?, nickname: String? = nil,
+                  phoneMasked: String? = nil, emailMasked: String? = nil) {
         self.authToken = token
         self.sessionId = sessionId
         self.userId = userId
         self.userHandle = handle
         self.userNickname = nickname ?? handle
+        // 登录通道自动识别:手机号/邮箱登录成功时服务端回填已绑凭据掩码,
+        // 这里直接持久化,「我的」页立即显示登录号码,无需二次绑定;refreshProfile 仍会兜底对齐
+        applyCredentialMasks(phone: phoneMasked, email: emailMasked)
         try? KeychainStore.save(Data(token.utf8), account: "lmh.auth.token")
         try? KeychainStore.save(Data(sessionId.utf8), account: "lmh.auth.session")
 
@@ -153,6 +160,15 @@ final class AppState: ObservableObject {
         // 仅存 token/userId/handle/nickname 会导致退出重登后头像不显示、
         // 实名要手动进一次页面才刷新。此处后台拉 /auth/me 对齐服务端。
         Task { await refreshProfile() }
+    }
+
+    /// 应用登录凭据掩码(手机号/邮箱),非 nil 时覆盖并持久化
+    func applyCredentialMasks(phone: String?, email: String?) {
+        if let p = phone { phoneMasked = p }
+        if let e = email { emailMasked = e }
+        let d = UserDefaults.standard
+        if let p = phoneMasked { d.set(p, forKey: ProfileKeys.phoneMasked) }
+        if let e = emailMasked { d.set(e, forKey: ProfileKeys.emailMasked) }
     }
 
     /// 后台刷新账号资料(启动时/从服务端确认最新昵称)

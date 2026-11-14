@@ -96,7 +96,15 @@ enum AuthAPI {
     struct SendCodeResult: Decodable { let ok: Bool; let expiresInSec: Int }
     struct AuthResult: Decodable {
         let ok: Bool
-        struct User: Decodable { let id: Int; let handle: String?; let nickname: String? }
+        struct User: Decodable {
+            let id: Int
+            let handle: String?
+            let nickname: String?
+            /// 登录通道识别:手机号/邮箱登录成功时服务端自动回填的已绑凭据掩码
+            /// (老账号也补),客户端直接显示,无需二次绑定
+            let phoneMasked: String?
+            let emailMasked: String?
+        }
         let user: User
         let token: String
         let sessionId: String

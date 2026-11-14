@@ -102,6 +102,9 @@ pnsRouter.post('/phone-check', async (req, res) => {
   if (user.banned) return res.status(403).json({ error: 'banned' });
 
   db.prepare('UPDATE users SET last_login_at=? WHERE id=?').run(now, user.id);
+  // 自动回填:绑定功能上线前注册的老账号 phone_masked 可能为 NULL,
+  // 一键登录成功即识别 —— 补上该手机号,UI 直接显示已登录号码,无需二次绑定
+  db.prepare(`UPDATE users SET phone_masked=? WHERE id=?`).run(maskPhone(mobile), user.id);
   if (ed25519Pub && ecdhPub) {
     db.prepare(
       `INSERT INTO user_keys (user_id, device_id, ed25519_pub, ecdh_pub, created_at) VALUES (?,?,?,?,?)
@@ -115,7 +118,7 @@ pnsRouter.post('/phone-check', async (req, res) => {
     .run(sessionId, user.id, tokenHash, now, now + SESSION_TTL_MS, String(deviceId || 'default'));
 
   const jwt = await signUserJwt(user.id, String(deviceId || 'default'));
-  const u = db.prepare('SELECT handle, nickname FROM users WHERE id=?').get(user.id) as { handle: string; nickname: string | null } | undefined;
+  const u = db.prepare('SELECT handle, nickname, phone_masked, email_masked FROM users WHERE id=?').get(user.id) as { handle: string; nickname: string | null; phone_masked: string | null; email_masked: string | null } | undefined;
   logger.info('pns_login_ok', { id: user.id, ip });
-  res.json({ ok: true, token: jwt, sessionId, user: { id: user.id, handle: u?.handle, nickname: u?.nickname ?? u?.handle } });
+  res.json({ ok: true, token: jwt, sessionId, user: { id: user.id, handle: u?.handle, nickname: u?.nickname ?? u?.handle, phoneMasked: u?.phone_masked ?? null, emailMasked: u?.email_masked ?? null } });
 });
