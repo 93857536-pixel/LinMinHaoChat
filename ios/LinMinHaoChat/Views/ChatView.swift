@@ -78,6 +78,9 @@ struct ChatView: View {
     @State private var isForwarding = false
     @State private var starredMsgIds = Set<String>()
     @State private var showStarredSheet = false
+    @State private var showMemberManage = false
+    @State private var roomType: String?
+    @State private var roomLabel = ""
     // 录音状态
     @State private var isRecording = false
     @State private var recordDuration: Double = 0
@@ -212,7 +215,39 @@ struct ChatView: View {
             }.padding(.horizontal, 12).padding(.vertical, 8)
         }
         .navigationTitle("加密聊天").navigationBarTitleDisplayMode(.inline)
-        .task { await viewModel.start() }.onDisappear { viewModel.leave(); cancelRecording() }
+        .toolbar {
+            // 群聊时显示「成员管理」入口(创建者可改名)
+            if roomType == "group" {
+                ToolbarItem(placement: .principal) {
+                    Text(roomLabel).font(.headline).lineLimit(1)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { showMemberManage = true } label: {
+                        Image(systemName: "person.2")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showMemberManage) {
+            MemberManageView(roomId: session.roomId, sessionToken: session.token, sessionKeyProvider: { viewModel.currentSessionKey })
+                .environmentObject(AppState.shared)
+        }
+        .task {
+            await viewModel.start()
+            // 拉房间信息获取类型与本地标签
+            do {
+                let info = try await ChatAPI.room(session.roomId, token: session.token)
+                roomType = info.room.type
+                // 刷新本地标签缓存
+                if let localLabel = UserDefaults.standard.string(forKey: "lmh.room.label.\(session.roomId)") {
+                    roomLabel = localLabel
+                } else if roomType == "dm" {
+                    roomLabel = "私聊"
+                } else {
+                    roomLabel = "群聊"
+                }
+            } catch { /* 静默 */ }
+        }
         .alert("错误", isPresented: .constant(errorMessage != nil)) {
             Button("确定") { errorMessage = nil }
         } message: { Text(errorMessage ?? "") }

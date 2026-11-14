@@ -262,10 +262,10 @@ final class ChatRoomViewModel: ObservableObject {
     // MARK: - 转发消息
     func forwardMessage(_ msg: DecryptedMsg, toRoomId targetRoomId: String, sessionKey: SymmetricKey, token: String) async throws {
         guard !msg.text.isEmpty else { return }
-        
+
         let ts = TimeUtil.nowMs
         let targetSeq = lastSeq + 1
-        
+
         // 转发时添加前缀标记
         let forwardedText = "↪ 转发: \(msg.text)"
         let enc = try MessageCrypto.encryptMessage(sessionKey: sessionKey,
@@ -276,6 +276,22 @@ final class ChatRoomViewModel: ObservableObject {
         lastSeq = r.seq
         messages.append(DecryptedMsg(id: r.id, seq: r.seq, label: "我", mine: true,
                                      text: forwardedText, ts: r.ts, kind: "msg"))
+    }
+
+    /// 修改群聊名称(仅创建者可调):AES-GCM 加密新名(roomId 为 AAD),更新本地缓存并刷新列表
+    func renameRoom(_ newName: String, token: String) async throws {
+        guard let sessionKey = currentSessionKey else {
+            throw NSError(domain: "ChatRoomViewModel", code: -1, userInfo: [NSLocalizedDescriptionKey: "会话密钥未初始化"])
+        }
+        let now = Date().timeIntervalSince1970
+        let ts64 = Int64(now * 1000)
+        // nameEnc 用 AES-GCM 加密(roomId 为 AAD),与消息加密同协议
+        let encPayload = try MessageCrypto.encryptMessage(sessionKey: sessionKey,
+            plaintext: newName, roomId: self.roomId, seq: Int(ts64), ts: ts64)
+        let nameEnc = "\(encPayload.iv):\(encPayload.ct)"
+        _ = try await ChatAPI.renameRoom(self.roomId, nameEnc: nameEnc, token: token)
+        UserDefaults.standard.set(newName, forKey: "lmh.room.label.\(self.roomId)")
+        AppState.shared.chatListVersion += 1
     }
 
     // MARK: - 列表预览(本地缓存,不上传;进入/离开聊天通知列表刷新未读)

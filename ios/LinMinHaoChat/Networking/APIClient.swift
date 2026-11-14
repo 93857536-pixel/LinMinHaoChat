@@ -457,6 +457,12 @@ enum ChatAPI {
         try await APIClient.request("/chat/rooms/\(roomId)/read", body: ["lastSeq": lastSeq], token: token)
     }
 
+    /// 修改房间名称(仅创建者) —— nameEnc 由客户端用 AES-GCM 加密(roomId 为 AAD)，服务器始终存密文
+    struct RenameResult: Decodable { let ok: Bool; let room: RoomMeta? }
+    static func renameRoom(_ roomId: String, nameEnc: String, token: String) async throws -> RenameResult {
+        try await APIClient.request("/chat/rooms/\(roomId)", method: "PATCH", body: ["nameEnc": nameEnc], token: token)
+    }
+
     /// 在线成员列表
     static func online(_ roomId: String, token: String) async throws -> OnlineResult {
         try await APIClient.request("/chat/rooms/\(roomId)/online", token: token)

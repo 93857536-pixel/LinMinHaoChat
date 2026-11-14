@@ -1,17 +1,42 @@
 import SwiftUI
+import CryptoKit
 
 /// 群聊成员管理视图
 struct MemberManageView: View {
     let roomId: String
     let sessionToken: String
+    /// 可选的会话密钥提供者(用于改名加密;nil = 从非聊天页面打开,不支持改名)
+    var sessionKeyProvider: (() -> SymmetricKey?)? = nil
     @StateObject private var viewModel = MemberManageViewModel()
     @State private var showAddSheet = false
     @State private var searchQuery = ""
     @State private var errorMessage: String?
-    
+    @State private var showRenameSheet = false
+    @State private var newGroupName = ""
+    @State private var isRenaming = false
+
     var body: some View {
         NavigationStack {
             List {
+                // 群名称(仅创建者可改名,需有可用的会话密钥)
+                if viewModel.isCreator, sessionKeyProvider != nil {
+                    Section("群名称") {
+                        HStack {
+                            Text(newGroupName.isEmpty ? "点击修改群名称" : newGroupName)
+                                .foregroundStyle(newGroupName.isEmpty ? .secondary : .primary)
+                            Spacer()
+                            if isRenaming {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "pencil")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { showRenameSheet = true }
+                    }
+                }
+
                 // 创建者信息
                 if viewModel.isCreator {
                     Section("创建者") {
@@ -63,6 +88,22 @@ struct MemberManageView: View {
             .sheet(isPresented: $showAddSheet) {
                 AddMemberSheet(searchQuery: $searchQuery) { userId in
                     Task { await viewModel.addMember(roomId: roomId, userId: userId, token: sessionToken) }
+                }
+            }
+            .sheet(isPresented: $showRenameSheet) {
+                GroupNameEditSheet(currentName: newGroupName) { newName in
+                    Task {
+                        if let key = sessionKeyProvider?() {
+                            do {
+                                isRenaming = true
+                                try await viewModel.renameRoom(newName: newName, roomId: roomId, token: sessionToken, sessionKey: key)
+                                newGroupName = newName
+                            } catch {
+                                errorMessage = "改名失败:\(error.localizedDescription)"
+                            }
+                            isRenaming = false
+                        }
+                    }
                 }
             }
             .task { await viewModel.loadMembers(roomId: roomId, token: sessionToken) }
@@ -171,6 +212,20 @@ final class MemberManageViewModel: ObservableObject {
             print("[MemberManage] leaveRoom error: \(error)")
         }
     }
+
+    /// 修改群名称(仅创建者):加密新名上传 + 更新本地缓存
+    func renameRoom(newName: String, roomId: String, token: String, sessionKey: SymmetricKey) async throws {
+        let now = Date().timeIntervalSince1970
+        let ts64 = Int64(now * 1000)
+        let encPayload = try MessageCrypto.encryptMessage(
+            sessionKey: sessionKey, plaintext: newName,
+            roomId: roomId, seq: Int(ts64), ts: ts64
+        )
+        let nameEnc = "\(encPayload.iv):\(encPayload.ct)"
+        _ = try await ChatAPI.renameRoom(roomId, nameEnc: nameEnc, token: token)
+        UserDefaults.standard.set(newName, forKey: "lmh.room.label.\(roomId)")
+        AppState.shared.chatListVersion += 1
+    }
 }
 
 // MARK: - 添加成员面板
@@ -248,6 +303,41 @@ struct AddMemberSheet: View {
             candidates = try await FriendsAPI.search(searchQuery, token: token)
         } catch {
             print("[AddMember] search error: \(error)")
+        }
+    }
+}
+
+// MARK: - 群名编辑面板
+struct GroupNameEditSheet: View {
+    let currentName: String
+    let onSave: (String) -> Void
+    @State private var name = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("群名称") {
+                    TextField("请输入群名称", text: $name)
+                        .autocorrectionDisabled()
+                }
+            }
+            .navigationTitle("修改群名称")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty { onSave(trimmed) }
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .onAppear { name = currentName }
         }
     }
 }

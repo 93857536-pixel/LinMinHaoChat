@@ -99,6 +99,20 @@ chatRouter.get('/rooms/:id', (req, res) => {
   res.json({ ok: true, room });
 });
 
+/** 修改房间名称(仅创建者可操作,name_enc 由客户端加密后上传;服务器存密文,始终不可读) */
+chatRouter.patch('/rooms/:id', (req, res) => {
+  const roomId = String(req.params.id);
+  if (!isMember(roomId, req.user!.id)) return res.status(404).json({ error: 'not_found' });
+  const room = db.prepare('SELECT created_by FROM rooms WHERE id=?').get(roomId) as
+    | { created_by: number } | undefined;
+  if (!room || room.created_by !== req.user!.id) return res.status(403).json({ error: 'not_creator' });
+  const nameEnc = String(req.body?.nameEnc ?? '');
+  if (nameEnc.length > 2048) return res.status(400).json({ error: 'too_long' });
+  db.prepare('UPDATE rooms SET name_enc=? WHERE id=?').run(nameEnc || null, roomId);
+  logger.info('room_renamed', { roomId, by: req.user!.id });
+  res.json({ ok: true, room: roomMeta(roomId, req.user!.id) });
+});
+
 /** 拉取会话密钥包(仅返回"我的" wrapped keys,不含他人) */
 chatRouter.get('/rooms/:id/keys', (req, res) => {
   const roomId = String(req.params.id);
