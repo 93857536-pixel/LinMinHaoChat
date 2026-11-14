@@ -159,13 +159,14 @@ authRouter.post('/login', async (req, res) => {
 
 /**
  * 当前账号资料(供 App 启动时恢复用户名/账号 ID)
- * GET /api/auth/me → { ok, user: { id, handle, nickname, createdAt } }
+ * GET /api/auth/me → { ok, user: { id, handle, nickname, createdAt, phoneMasked, emailMasked } }
  */
 authRouter.get('/me', authRequired, (req, res) => {
-  const u = db.prepare('SELECT id, handle, nickname, created_at, banned, rn_status, rn_name_mask, rn_verified_at, avatar_mime, avatar_updated_at FROM users WHERE id=?').get(req.user!.id) as
+  const u = db.prepare('SELECT id, handle, nickname, created_at, banned, rn_status, rn_name_mask, rn_verified_at, avatar_mime, avatar_updated_at, phone_masked, email_masked FROM users WHERE id=?').get(req.user!.id) as
     | { id: number; handle: string | null; nickname: string | null; created_at: number; banned: number;
         rn_status: string | null; rn_name_mask: string | null; rn_verified_at: number | null;
-        avatar_mime: string | null; avatar_updated_at: number | null }
+        avatar_mime: string | null; avatar_updated_at: number | null;
+        phone_masked: string | null; email_masked: string | null }
     | undefined;
   if (!u) return res.status(404).json({ error: 'not_found' });
   if (u.banned) return res.status(403).json({ error: 'banned' });
@@ -184,6 +185,9 @@ authRouter.get('/me', authRequired, (req, res) => {
       realnameVerified: u.rn_status === 'verified',
       realnameNameMasked: u.rn_name_mask,
       realnameVerifiedAt: u.rn_verified_at,
+      // 登录凭据掩码(用于绑定界面显示)
+      phoneMasked: u.phone_masked,
+      emailMasked: u.email_masked,
     },
   });
 });
@@ -204,6 +208,74 @@ authRouter.post('/nickname', authRequired, (req, res) => {
   logger.info('nickname_updated', { id: req.user!.id, nickname });
   const u = db.prepare('SELECT handle, nickname FROM users WHERE id=?').get(req.user!.id) as { handle: string; nickname: string | null } | undefined;
   res.json({ ok: true, user: { id: req.user!.id, handle: u?.handle, nickname: u?.nickname ?? nickname } });
+});
+
+/**
+ * 绑定/解绑登录凭据:允许一个账号同时绑定手机号和邮箱
+ * POST /api/auth/bind { bind_type, type, target, code }
+ *   bind_type: 'bind' | 'unbind'
+ *   type: 'sms' | 'email' (目标凭据类型)
+ *   target: 手机号或邮箱
+ *   code: 验证码
+ *
+ * 逻辑:
+ *   - 已绑定 phone 的账号 → 可绑 email(需 email 验证码)
+ *   - 已绑定 email 的账号 → 可绑 phone(需 sms 验证码)
+ *   - 若新凭据已被其他账号占用 → 返回 conflict
+ */
+authRouter.post('/bind', authRequired, async (req, res) => {
+  const { bind_type, type, target, code } = req.body || {};
+  if (!['bind', 'unbind'].includes(String(bind_type))) return res.status(400).json({ error: 'bad_bind_type' });
+  if (type !== 'sms' && type !== 'email') return res.status(400).json({ error: 'bad_type' });
+  const t = String(target || '').trim();
+  if (type === 'sms' && !isValidPhone(t)) return res.status(400).json({ error: 'bad_phone' });
+  if (type === 'email' && !isValidEmail(t)) return res.status(400).json({ error: 'bad_email' });
+  const norm = type === 'email' ? normalizeEmail(t) : t;
+  const codeStr = String(code || '');
+  if (!/^\d{6}$/.test(codeStr)) return res.status(400).json({ error: 'bad_code' });
+
+  const ip = clientIp(req);
+  const r = rateLimit(`bind:${ip}`, 10, 10 * 60_000, 10 * 60_000);
+  if (!r.ok) return res.status(429).json({ error: 'rate_limited', retryAfterSec: r.retryAfterSec });
+
+  const th = hashTarget(`${type}:${norm}`);
+  const currentUser = db.prepare('SELECT id, phone_hash, email_hash FROM users WHERE id=?').get(req.user!.id) as { id: number; phone_hash: string | null; email_hash: string | null } | undefined;
+  if (!currentUser) return res.status(404).json({ error: 'not_found' });
+
+  // 检查目标凭据是否已被其他账号占用
+  const existingUser = db.prepare('SELECT id FROM users WHERE id!=? AND (phone_hash=? OR email_hash=?)').get(
+    currentUser.id,
+    type === 'sms' ? th : null,
+    type === 'email' ? th : null
+  ) as { id: number } | undefined;
+
+  if (bind_type === 'bind') {
+    if (existingUser) return res.status(409).json({ error: 'target_already_bound' });
+    // 校验验证码
+    const v = verifyCode(norm, type, codeStr);
+    if (!v.ok) return res.status(401).json({ error: v.error === 'invalid_code' ? 'invalid_code' : 'too_many_attempts' });
+    // 更新用户记录
+    const updateFields: string[] = [];
+    const values: any[] = [];
+    if (type === 'sms') {
+      updateFields.push('phone_hash = ?', 'phone_masked = ?');
+      values.push(th, maskPhone(norm));
+    } else {
+      updateFields.push('email_hash = ?', 'email_masked = ?');
+      values.push(th, maskEmail(norm));
+    }
+    values.push(currentUser.id);
+    db.prepare(`UPDATE users SET ${updateFields.join(', ')} WHERE id=?`).run(...values);
+    logger.info('credential_bound', { user_id: currentUser.id, type, target: type === 'sms' ? maskPhone(norm) : maskEmail(norm) });
+    return res.json({ ok: true });
+  }
+
+  // unbind:不允许解绑最后一个凭据
+  if (type === 'sms' && !currentUser.email_hash) return res.status(400).json({ error: 'last_credential' });
+  if (type === 'email' && !currentUser.phone_hash) return res.status(400).json({ error: 'last_credential' });
+  db.prepare(`UPDATE users SET ${type === 'sms' ? 'phone_hash=NULL,phone_masked=NULL' : 'email_hash=NULL,email_masked=NULL'} WHERE id=?`).run(currentUser.id);
+  logger.info('credential_unbound', { user_id: currentUser.id, type });
+  return res.json({ ok: true });
 });
 
 /** 登出:作废当前 session

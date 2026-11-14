@@ -118,6 +118,9 @@ enum AuthAPI {
             let realnameVerified: Bool?
             let realnameNameMasked: String?
             let realnameVerifiedAt: Int64?
+            // 登录凭据掩码
+            let phoneMasked: String?
+            let emailMasked: String?
         }
         let user: User
     }
@@ -153,6 +156,12 @@ enum AuthAPI {
     /// 拉取当前账号资料(启动恢复用户名/账号 ID)
     static func me(token: String) async throws -> ProfileResult {
         try await APIClient.request("/auth/me", token: token)
+    }
+
+    /// 绑定登录凭据(手机或邮箱):需验证码
+    struct BindResult: Decodable { let ok: Bool }
+    static func bindCredential(bindType: String, type: String, target: String, code: String, token: String) async throws -> BindResult {
+        try await APIClient.request("/auth/bind", body: ["bind_type": bindType, "type": type, "target": target, "code": code], token: token)
     }
 
     /// 修改昵称(账号名称);账号 ID(handle)不可改

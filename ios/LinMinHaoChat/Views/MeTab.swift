@@ -390,19 +390,70 @@ struct AccountDetail: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var showNicknameEdit = false
+    @State private var showBindPhone = false
+    @State private var showBindEmail = false
 
     var body: some View {
         List {
             Section {
                 LabeledContent("账号名称", value: appState.displayName)
                 LabeledContent("账号 ID", value: appState.userHandle ?? "—")
+                if let phone = appState.phoneMasked {
+                    LabeledContent("已绑手机", value: phone)
+                }
+                if let email = appState.emailMasked {
+                    LabeledContent("已绑邮箱", value: email)
+                }
                 LabeledContent("设备身份", value: appState.identity?.deviceId ?? "—")
                 LabeledContent("会话", value: appState.sessionId.map { String($0.prefix(8)) + "…" } ?? "—")
             } header: {
                 Text("当前账号")
             } footer: {
-                Text("账号 ID 由系统按注册时间自动生成（如 202210216pm.A），全网唯一且不可修改；账号名称可随时更改。")
+                Text("账号 ID 由系统按注册时间自动生成（如 202210216pm.A），全网唯一且不可修改；账号名称可随时更改。支持同时绑定手机号和邮箱，两种通道均可用于登录。")
             }
+
+            // 绑定凭据入口
+            if appState.isLoggedIn {
+                Section("绑定凭据") {
+                    if appState.phoneMasked == nil {
+                        Button {
+                            showBindPhone = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "iphone").foregroundStyle(.blue)
+                                Text("绑定手机号")
+                                Spacer()
+                                Text("用于登录").foregroundStyle(.secondary)
+                            }
+                        }
+                    } else {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                            Text("手机号已绑定: \(appState.phoneMasked!)")
+                        }
+                        .font(.subheadline)
+                    }
+                    if appState.emailMasked == nil {
+                        Button {
+                            showBindEmail = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "envelope").foregroundStyle(.blue)
+                                Text("绑定邮箱")
+                                Spacer()
+                                Text("用于登录").foregroundStyle(.secondary)
+                            }
+                        }
+                    } else {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                            Text("邮箱已绑定: \(appState.emailMasked!)")
+                        }
+                        .font(.subheadline)
+                    }
+                }
+            }
+
             Section("账号名称") {
                 Button {
                     showNicknameEdit = true
@@ -427,6 +478,18 @@ struct AccountDetail: View {
         .sheet(isPresented: $showNicknameEdit) {
             NicknameEditSheet()
                 .environmentObject(appState)
+        }
+        .sheet(isPresented: $showBindPhone) {
+            CredentialBindSheet(type: "sms", title: "绑定手机号")
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $showBindEmail) {
+            CredentialBindSheet(type: "email", title: "绑定邮箱")
+                .environmentObject(appState)
+        }
+        .onAppear {
+            // 刷新账号资料以显示最新绑定状态
+            Task { await appState.refreshProfile() }
         }
     }
 }
@@ -508,6 +571,120 @@ struct NicknameEditSheet: View {
                 errorMessage = "修改过于频繁，请稍后再试"
             } else {
                 errorMessage = "保存失败：\(error.localizedDescription)"
+            }
+        }
+    }
+}
+
+// MARK: - 绑定凭据(手机/邮箱)
+
+struct CredentialBindSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    let type: String  // "sms" or "email"
+    let title: String
+
+    @State private var target = ""
+    @State private var code = ""
+    @State private var isSending = false
+    @State private var isBinding = false
+    @State private var errorMessage: String?
+    @State private var countdown = 0
+
+    private var isEmail: Bool { type == "email" }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(isEmail ? "输入邮箱地址" : "输入手机号", text: $target)
+                        .keyboardType(isEmail ? .emailAddress : .phonePad)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    if !isEmail {
+                        TextField("验证码", text: $code)
+                            .keyboardType(.numberPad)
+                        HStack {
+                            Button(action: { Task { await sendCode() } }) {
+                                Text(countdown > 0 ? "\(countdown)s后重试" : "发送验证码")
+                                    .foregroundColor(countdown > 0 ? .secondary : .blue)
+                            }
+                            .disabled(countdown > 0 || isSending || target.count < 11)
+                            Spacer()
+                            if isSending { ProgressView() }
+                        }
+                    }
+                } header: {
+                    Text("输入要绑定的\(isEmail ? "邮箱" : "手机号")")
+                } footer: {
+                    Text(isEmail ? "绑定邮箱后可使用该邮箱登录账号" : "绑定手机号后可使用该手机号登录账号")
+                }
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage).font(.footnote).foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isBinding {
+                        ProgressView()
+                    } else {
+                        Button("确认绑定") { Task { await bind() } }
+                            .disabled(target.isEmpty || (code.isEmpty && !isEmail) || isSending)
+                    }
+                }
+            }
+        }
+    }
+
+    private func sendCode() async {
+        isSending = true
+        errorMessage = nil
+        defer { isSending = false }
+        do {
+            _ = try await AuthAPI.sendCode(type: type, target: target)
+            countdown = 60
+            Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
+                if countdown > 0 {
+                    countdown -= 1
+                } else {
+                    timer.invalidate()
+                }
+            }
+        } catch {
+            if let e = error as? ApiError, e.status == 429 {
+                errorMessage = "发送过于频繁，请稍后再试"
+            } else {
+                errorMessage = "发送失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func bind() async {
+        guard let token = appState.authToken else { return }
+        isBinding = true
+        errorMessage = nil
+        defer { isBinding = false }
+        do {
+            _ = try await AuthAPI.bindCredential(bindType: "bind", type: type, target: target, code: code, token: token)
+            await appState.refreshProfile()
+            dismiss()
+        } catch {
+            if let e = error as? ApiError {
+                switch e.status {
+                case 401: errorMessage = "验证码错误或已过期"
+                case 409: errorMessage = "该\(isEmail ? "邮箱" : "手机号")已被其他账号绑定"
+                case 429: errorMessage = "操作过于频繁，请稍后再试"
+                default: errorMessage = "绑定失败：\(e.message)"
+                }
+            } else {
+                errorMessage = "绑定失败：\(error.localizedDescription)"
             }
         }
     }

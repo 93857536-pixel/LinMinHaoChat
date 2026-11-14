@@ -21,6 +21,10 @@ final class AppState: ObservableObject {
     @Published var userCreatedAt: Int64?
     /// 我的头像版本号(服务端 avatarUpdatedAt;nil = 没有头像)
     @Published var avatarUpdatedAt: Int64?
+    /// 已绑定的手机号掩码(如 139****8888)
+    @Published var phoneMasked: String?
+    /// 已绑定的邮箱掩码(如 l***@example.com)
+    @Published var emailMasked: String?
 
     // MARK: 实名认证状态(none/verified/mismatch/no_record)
     @Published var realnameStatus: String = "none"
@@ -62,6 +66,8 @@ final class AppState: ObservableObject {
         static let rnVerified = "lmh.auth.rnVerified"
         static let rnNameMasked = "lmh.auth.rnNameMasked"
         static let rnVerifiedAt = "lmh.auth.rnVerifiedAt"
+        static let phoneMasked = "lmh.auth.phoneMasked"
+        static let emailMasked = "lmh.auth.emailMasked"
     }
 
     init() {
@@ -165,6 +171,8 @@ final class AppState: ObservableObject {
                     let realnameVerified: Bool?
                     let realnameNameMasked: String?
                     let realnameVerifiedAt: Int64?
+                    let phoneMasked: String?
+                    let emailMasked: String?
                 }
                 let ok: Bool
                 let user: User
@@ -180,6 +188,11 @@ final class AppState: ObservableObject {
             if let n = userNickname { d.set(n, forKey: ProfileKeys.nickname) }
             if let ts = me.user.createdAt { d.set(ts, forKey: ProfileKeys.createdAt) }
             applyAvatar(updatedAt: me.user.hasAvatar == true ? me.user.avatarUpdatedAt : nil)
+            // 绑定凭据掩码
+            phoneMasked = me.user.phoneMasked
+            emailMasked = me.user.emailMasked
+            if let pm = phoneMasked { d.set(pm, forKey: ProfileKeys.phoneMasked) } else { d.removeObject(forKey: ProfileKeys.phoneMasked) }
+            if let em = emailMasked { d.set(em, forKey: ProfileKeys.emailMasked) } else { d.removeObject(forKey: ProfileKeys.emailMasked) }
             // 实名状态以服务端为准
             applyRealname(status: me.user.realnameStatus ?? "none",
                           verified: me.user.realnameVerified ?? false,
@@ -220,6 +233,8 @@ final class AppState: ObservableObject {
         userNickname = nil
         userCreatedAt = nil
         avatarUpdatedAt = nil
+        phoneMasked = nil
+        emailMasked = nil
         realnameStatus = "none"
         realnameVerified = false
         realnameNameMasked = nil
@@ -229,7 +244,7 @@ final class AppState: ObservableObject {
         KeychainStore.delete(account: "lmh.auth.session")
         let d = UserDefaults.standard
         [ProfileKeys.userId, ProfileKeys.handle, ProfileKeys.nickname, ProfileKeys.createdAt,
-         ProfileKeys.avatarUpdatedAt,
+         ProfileKeys.avatarUpdatedAt, ProfileKeys.phoneMasked, ProfileKeys.emailMasked,
          ProfileKeys.rnStatus, ProfileKeys.rnVerified, ProfileKeys.rnNameMasked, ProfileKeys.rnVerifiedAt]
             .forEach { d.removeObject(forKey: $0) }
     }
