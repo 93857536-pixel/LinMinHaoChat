@@ -1,0 +1,85 @@
+name: Deploy Server to ECS
+
+on:
+  push:
+    paths:
+      - 'server/**'
+      - '.github/workflows/*.yml'
+    branches: [main]
+  workflow_dispatch:  # 手动触发
+
+env:
+  NODE_VERSION: '20'
+  SERVER_HOST: '112.126.79.9'
+  SERVER_USER: 'Administrator'
+  DEPLOY_DIR: '/c/opt/linminhao/app'
+  DEPLOY_KEY: ${{ secrets.SERVER_DEPLOY_KEY }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: cd server && npm ci --only=production
+
+      - name: Build TypeScript
+        run: cd server && npm run build
+
+      - name: Prepare deploy
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat > ~/.ssh/config << EOF
+          Host ecs-deploy
+            HostName ${{ env.SERVER_HOST }}
+            User ${{ env.SERVER_USER }}
+            IdentityFile ~/.ssh/id_ed25519
+            StrictHostKeyChecking no
+            ForwardAgent no
+          EOF
+
+      - name: Deploy to ECS
+        run: |
+          scp -o StrictHostKeyChecking=no \
+              -i ~/.ssh/id_ed25519 \
+              -r server/dist \
+              "${{ env.SERVER_USER }}@${{ env.SERVER_HOST }}:${{ env.DEPLOY_DIR }}/dist/"
+
+          # Backup current version
+          ssh -o StrictHostKeyChecking=no \
+              -i ~/.ssh/id_ed25519 \
+              "${{ env.SERVER_USER }}@${{ env.SERVER_HOST }}" \
+              "cd ${{ env.DEPLOY_DIR }} && \
+               if [ -d dist ]; then
+                 BACKUP=\"dist-\$(date +%Y%m%d-%H%M%S).bak\"
+                 cp -r dist \"\$BACKUP\"
+                 echo \"Backed up to \$BACKUP\"
+               fi && \
+               chmod +x dist/index.js"
+
+      - name: Restart service (PM2 or systemctl)
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+              -i ~/.ssh/id_ed25519 \
+              "${{ env.SERVER_USER }}@${{ env.SERVER_HOST }}" \
+              "cd ${{ env.DEPLOY_DIR }} && \
+               pm2 restart linminhao-chat || \
+               pm2 start dist/index.js --name linminhao-chat || \
+               echo 'Manual restart needed'"
+
+      - name: Health check
+        run: |
+          sleep 3
+          curl -sf "http://${{ env.SERVER_HOST }}:3000/api/server-health" \
+            && echo "✅ Deployment successful!" || echo "⚠️ Health check failed, manual intervention may be needed"

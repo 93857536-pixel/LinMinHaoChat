@@ -9,3 +9,5 @@ config/
 *.tsbuildinfo
 ios/*.ipa
 /*.ipa
+ssh-keys/
+deploy-server.sh

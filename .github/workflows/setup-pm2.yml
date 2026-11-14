@@ -1,0 +1,50 @@
+name: Setup PM2 Service
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'production'
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install PM2 globally
+        run: npm install -g pm2
+        
+      - name: Create PM2 ecosystem config
+        run: |
+          cat > ecosystem.config.js << EOF
+          module.exports = {
+            apps: [{
+              name: 'linminhao-chat',
+              script: './dist/index.js',
+              instances: 'max',
+              exec_mode: 'cluster',
+              env_production: {
+                NODE_ENV: 'production',
+                PORT: 3000
+              }
+            }]
+          }
+          EOF
+          
+      - name: Upload PM2 config to server
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$SERVER_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          
+          ssh -o StrictHostKeyChecking=no \
+              -i ~/.ssh/id_ed25519 \
+              "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" \
+              "mkdir -p ${{ secrets.DEPLOY_DIR }} && cd ${{ secrets.DEPLOY_DIR }} && \
+               pm2 delete linminhao-chat 2>/dev/null || true && \
+               pm2 start ecosystem.config.js && \
+               pm2 save && pm2 startup systemd"
