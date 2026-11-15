@@ -86,6 +86,8 @@ struct MeTab: View {
                             Spacer()
                         }
                     }
+                }, header: {
+                    Text("密钥管理")
                 }, footer: {
                     Text("导出可携带到你的其他设备上使用同一身份；导入会覆盖本机现有身份，慎用。两者均经过口令加密保护，仅存储于本地 Keychain，服务器不保存明文私钥。")
                 })
@@ -912,7 +914,7 @@ struct KeyImportView: View {
                 }
                 if success {
                     Section {
-                        Text("导入成功！请重新登录以刷新会话。").font(.subheadline).foregroundStyle(.green)
+                        Text("导入成功，身份已切换到本机 Keychain。建议重新进入会话以使用新身份收发消息。").font(.subheadline).foregroundStyle(.green)
                     }
                 }
                 if !appState.isLoggedIn {
@@ -943,6 +945,7 @@ struct KeyImportView: View {
         do {
             let identity = try IdentityCrypto.importEncryptedPackage(pasteBoardText, pin: pin)
             try IdentityStore.save(identity)
+            appState.reloadIdentity()
             success = true
             // 同时把新身份同步到服务器(用当前 token)
             if let token = appState.authToken {
@@ -950,7 +953,6 @@ struct KeyImportView: View {
                 try await KeysAPI.saveExportPackage(pkg: pkg, deviceId: identity.deviceId, token: token)
             }
             errorMessage = nil
-            dismiss()
         } catch {
             errorMessage = "导入失败: \(error.localizedDescription)"
         }

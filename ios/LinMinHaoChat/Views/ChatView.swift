@@ -270,6 +270,7 @@ struct ChatView: View {
             if roomType == "group" {
                 ToolbarItem(placement: .principal) { Text(roomLabel).font(.headline).lineLimit(1) }
                 ToolbarItem(placement: .primaryAction) { Button { showMemberManage = true } label: { Image(systemName: "person.2") } }
+                ToolbarItem(placement: .primaryAction) { Button { showSearch.toggle() } label: { Image(systemName: "magnifyingglass").foregroundColor(showSearch ? Color.accentColor : Color.secondary) } }
             } else {
                 ToolbarItem(placement: .primaryAction) { Button { showSearch.toggle()} label: { Image(systemName: "magnifyingglass").foregroundColor(showSearch ? Color.accentColor : Color.secondary) } }
             }

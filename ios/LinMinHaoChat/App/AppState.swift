@@ -167,6 +167,17 @@ final class AppState: ObservableObject {
         Task { await refreshProfile() }
     }
 
+    /// 重新从 Keychain 载入身份(导入身份包后刷新内存缓存)
+    func reloadIdentity() {
+        if let keys = try? IdentityStore.load() {
+            identity = DeviceIdentity(
+                deviceId: keys.deviceId,
+                ed25519Pub: keys.ed25519Pub,
+                ecdhPub: keys.ecdhPub
+            )
+        }
+    }
+
     /// 应用登录凭据掩码(手机号/邮箱),非 nil 时覆盖并持久化
     func applyCredentialMasks(phone: String?, email: String?) {
         if let p = phone { phoneMasked = p }
