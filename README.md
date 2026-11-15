@@ -1,6 +1,6 @@
 # LinMinHao Chat 🔐
 
-**端到端加密(E2EE)聊天 · 原生 iOS App 为主客户端 · Web 为测试/兼容客户端**
+**端到端加密(E2EE)聊天 · iOS / Android / HarmonyOS 三系统客户端 · Web 为测试/兼容客户端**
 
 > 📱 正式客户端:原生 iOS App(开发中)。Web 版保留为开发测试 / E2EE 协议测试 / 兼容性测试客户端:
 > https://chat.linminhao.top(后端基础设施;Web 前端测试入口,2026-10-05 起从根域名迁移)
@@ -33,6 +33,21 @@ Web 前端**不删除**,保留作为开发测试 / E2EE 协议测试 / 后端 AP
 | 👥 **邀请聊天(群聊)** | 链接 + 6 位验证码门禁,朋友点链接输入验证码即可加入;访客自动分配全局统一编号(访客001/002…),**每个人看到的编号完全一致**,对得上号 |
 | 📁 **永久账号聊天** | 手机/邮箱验证码注册(支持短信/邮件双通道),消息历史、已读回执、在线状态、加密附件、多设备密钥迁移 |
 | 🛡️ **隐私友好** | 无任何追踪、无广告、无明文存储。管理员后台只能看到元数据统计,看不到任何聊天内容 |
+
+## 📥 安装包下载(三端)
+
+最新发行版:[**v1.9.28 — 三端发行版(iOS / Android / HarmonyOS)**](https://github.com/93857536-pixel/LinMinHaoChat/releases/tag/v1.9.28)
+
+| 平台 | 资产 | 版本 | 安装方式 |
+|---|---|---|---|
+| 📱 iOS | `LinMinHaoChat-ios-unsigned-v28.ipa` | 1.9 (build 28) | 未签名 IPA,需全能签/Esign 等第三方签名工具签名后安装 |
+| 🤖 Android | `LinMinHaoChat-android-v1.9.16-debug.apk` | 1.9.16 (Android 12+) | 公共 debug 证书签名(Android 系统硬性要求 APK 必须带签名),允许「安装未知应用」后直接安装 |
+| 🌸 HarmonyOS | `LinMinHaoChat-harmony-v1.9.16-unsigned.hap` | 1.9.16 | 未签名 HAP,需 DevEco Studio 自动签名(华为开发者账号)或自备 .p12 证书签名 |
+
+> ⚠️ 按约定,本仓库所有发行版**不附项目私有签名**:iOS/鸿蒙为未签包,Android 使用公共 debug 证书(非私钥)。
+> 各端详细安装步骤与 E2EE 说明见 [Release 页](https://github.com/93857536-pixel/LinMinHaoChat/releases/tag/v1.9.28)。
+
+---
 
 ## 🚀 快速开始
 
