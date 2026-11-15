@@ -2,6 +2,8 @@ import SwiftUI
 import UIKit
 import CryptoKit
 import AVFoundation
+import PhotosUI
+import UniformTypeIdentifiers
 
 // MARK: - 录音控制器（actor，避免AVAudioRecorder delegate与View交互）
 actor VoiceRecorder {
@@ -85,6 +87,17 @@ struct ChatView: View {
     @State private var isRecording = false
     @State private var recordDuration: Double = 0
     @State private var recordingURL: URL?
+    // 附件选择(视频/文件)
+    @State private var selectedVideoItem: PhotosPickerItem?
+    @State private var selectedFileURL: URL?
+    @State private var showVideoPicker = false
+    @State private var showFilePicker = false
+    @State private var fileSending = false
+    /// 引用回复目标消息（nil = 无引用）
+    @State private var quoteMsg: DecryptedMsg?
+    /// 本地消息搜索
+    @State private var showSearch = false
+    @State private var searchQuery = ""
     
     private let recorder = VoiceRecorder()
     private let audioPlayer = AVAudioPlayerCache()
@@ -133,20 +146,7 @@ struct ChatView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 10) {
-                            ForEach(viewModel.messages) { msg in
-                                MessageBubbleView(
-                                    msg: msg,
-                                    onCopy: { copyToClipboard(msg.text) },
-                                    onDelete: viewModel.messages.contains(where: { $0.id == msg.id }) ? { viewModel.deleteMessage(msg.id) } : nil,
-                                    onForward: { forwardMsg = msg; showForwardSheet = true },
-                                    isStarred: starredMsgIds.contains(msg.id),
-                                    onStar: { Task { await toggleStar(msg) } },
-                                    onPlayVoice: makeVoicePlayAction(msg)
-                                )
-                                .id(msg.id)
-                            }
-                        }
+                        messageListView
                         .padding(.horizontal, 12).padding(.vertical, 10)
                     }
                     .onChange(of: viewModel.messages.count) { _, _ in
@@ -154,10 +154,52 @@ struct ChatView: View {
                             withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(last.id, anchor: .bottom) }
                         }
                     }
+                    .onChange(of: searchQuery) { _, q in
+                        // 输入时保持滚动位置，不自动滚到底部
+                    }
                 }
             }
-            
+
             Divider()
+
+            // 引用卡片（显示在输入框上方）
+            quoteCard
+
+            // 搜索条
+            if showSearch {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("搜索消息…", text: $searchQuery)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    if !searchQuery.isEmpty {
+                        Button { searchQuery = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }
+                    }
+                    Button("清除") { searchQuery = ""; showSearch = false }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(8)
+                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 8))
+                .padding(.horizontal)
+            }
+
+            // 附件预览(视频/文件待发)
+            if let url = selectedFileURL {
+                filePreviewRow(url: url)
+            } else if selectedVideoItem != nil {
+                HStack {
+                    ProgressView()
+                    Text("正在准备视频…").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .onChange(of: selectedVideoItem) { _, item in
+                    Task { await pickVideo(item) }
+                }
+            }
             
             // 图片预览
             if let img = selectedImage {
@@ -172,10 +214,16 @@ struct ChatView: View {
             
             // 输入栏
             HStack(alignment: .bottom, spacing: 10) {
-                // 图片按钮
-                Button { showPicker = true } label: {
-                    Image(systemName: "photo").font(.system(size: 20)).frame(width: 38, height: 38).foregroundStyle(.secondary)
-                }.buttonStyle(.plain)
+            // 「+」菜单: 拍照 / 视频 / 文件
+            Menu("附件") {
+                Button { showPicker = true } label: { Label("拍照 / 相册", systemImage: "camera") }
+                Button {
+                    showFilePicker = true
+                } label: { Label("视频", systemImage: "video") }
+                Button {
+                    showFilePicker = true
+                } label: { Label("文件", systemImage: "doc") }
+            }
                 
                 // 文本输入
                 TextField("加密消息", text: $inputText, axis: .vertical).lineLimit(1...5).focused($inputFocused).lmhChatInputBubble()
@@ -195,7 +243,10 @@ struct ChatView: View {
                         }
                         if !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             let text = inputText; inputText = ""
-                            Task { await viewModel.send(text) }
+                            let qid = quoteMsg?.id
+                            if qid != nil { viewModel.markQuoteRef(quoteMsg!, text) }
+                            Task { await viewModel.send(text, quoteMsgId: qid) }
+                            quoteMsg = nil
                         } else {
                             startRecording()
                         }
@@ -215,17 +266,12 @@ struct ChatView: View {
             }.padding(.horizontal, 12).padding(.vertical, 8)
         }
         .navigationTitle("加密聊天").navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            // 群聊时显示「成员管理」入口(创建者可改名)
+        .toolbar { 
             if roomType == "group" {
-                ToolbarItem(placement: .principal) {
-                    Text(roomLabel).font(.headline).lineLimit(1)
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button { showMemberManage = true } label: {
-                        Image(systemName: "person.2")
-                    }
-                }
+                ToolbarItem(placement: .principal) { Text(roomLabel).font(.headline).lineLimit(1) }
+                ToolbarItem(placement: .primaryAction) { Button { showMemberManage = true } label: { Image(systemName: "person.2") } }
+            } else {
+                ToolbarItem(placement: .primaryAction) { Button { showSearch.toggle()} label: { Image(systemName: "magnifyingglass").foregroundColor(showSearch ? Color.accentColor : Color.secondary) } }
             }
         }
         .sheet(isPresented: $showMemberManage) {
@@ -263,6 +309,17 @@ struct ChatView: View {
         .sheet(isPresented: $showPicker) { ImagePicker(image: $selectedImage) }
         .sheet(isPresented: $showForwardSheet) { forwardSheet }
         .sheet(isPresented: $showStarredSheet) { starredSheet }
+        .fileImporter(
+            isPresented: $showFilePicker,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let u = urls.first { selectedFileURL = u }
+            case .failure: break
+            }
+        }
         .onAppear { loadStarred() }
         .task { await setupAudioSession() }
     }
@@ -301,6 +358,93 @@ struct ChatView: View {
     
     private func cancelRecording() {
         Task { await stopRecording() }
+    }
+
+    // MARK: - 视频(从相册选择)
+
+    private func pickVideo(_ item: PhotosPickerItem?) async {
+        guard let item else { selectedVideoItem = nil; return }
+        do {
+            if let url = try await item.loadTransferable(type: URL.self) {
+                selectedFileURL = url
+                selectedVideoItem = nil
+            }
+        } catch {
+            errorMessage = "无法读取所选视频"
+        }
+    }
+
+    // MARK: - 文件上传(发送任意附件)
+
+    /// 加密并上传文件,序列化为 attMeta(与语音+图片同构),发送消息帧
+    /// 加密并上传文件,序列化为 attMeta(与语音+图片同构),发送消息帧
+    private func sendFileAt(url: URL) async {
+        guard let token = AppState.shared.authToken,
+              let sessionKey = viewModel.currentSessionKey else {
+            errorMessage = "未登录或密钥缺失"; return
+        }
+        isSending = true
+        defer { isSending = false; selectedFileURL = nil; fileSending = false }
+        do {
+            let data = try Data(contentsOf: url)
+            let name = (url.lastPathComponent as NSString).deletingPathExtension
+            let ext = url.pathExtension.lowercased()
+            let filename = name + (ext.isEmpty ? "" : ".\(ext)")
+            let mime = mimeTypeFromExt(ext)
+            let ts = TimeUtil.nowMs
+            let encData = try MessageCrypto.encryptAttachment(sessionKey: sessionKey, data: data, roomId: session.roomId, ts: ts)
+            let upload = try await AttachmentAPI.upload(roomId: session.roomId, mimeType: mime, data: encData, token: token)
+            let attMeta = "{\"f\":{\"attId\":\"\(upload.attId)\",\"name\":\"\(filename)\",\"size\":\(data.count),\"mime\":\"\(mime)\"}}"
+            let plainMeta = "{\"attId\":\"\(upload.attId)\",\"mime\":\"\(mime)\",\"size\":\(data.count)}"
+            let targetSeq = viewModel.nextSeq
+            let encMsg = try MessageCrypto.encryptMessage(sessionKey: sessionKey, plaintext: attMeta, roomId: session.roomId, seq: targetSeq, ts: ts)
+            let r = try await ChatAPI.send(session.roomId, iv: encMsg.iv, cipher: encMsg.ct, seq: targetSeq, ts: ts, kind: "attachment", meta: plainMeta, token: token)
+            let attInfo = DecryptedMsg.AttachmentInfo(attId: upload.attId, name: filename, size: data.count, mime: mime)
+            viewModel.messages.append(DecryptedMsg(id: r.id, seq: r.seq, label: "我", mine: true, text: filename, ts: r.ts, kind: "attachment", att: attInfo, isRead: true))
+            viewModel.updatePreview()
+        } catch {
+            errorMessage = "文件发送失败: \(error.localizedDescription)"
+        }
+    }
+
+
+    private func mimeTypeFromExt(_ ext: String) -> String {
+        switch ext {
+        case "jpg", "jpeg": return "image/jpeg"
+        case "png": return "image/png"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        case "mp4": return "video/mp4"
+        case "m4a", "m4v": return "audio/mp4"
+        case "pdf": return "application/pdf"
+        case "zip": return "application/zip"
+        case "7z": return "application/x-7z-compressed"
+        case "json": return "application/json"
+        case "txt", "text": return "text/plain"
+        case "md": return "text/markdown"
+        default: return "application/octet-stream"
+        }
+    }
+
+    /// 当前已选文件的预览行(显示文件名+大小,支持取消/重新选)
+    private func filePreviewRow(url: URL) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.fill").font(.title3).foregroundStyle(.blue)
+            VStack(alignment: .leading, spacing: 2) {
+                Text((url.lastPathComponent as NSString).deletingPathExtension)
+                    .font(.caption).lineLimit(1)
+                Text(mimeTypeFromExt(url.pathExtension.lowercased()))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button { selectedFileURL = nil } label: {
+                Image(systemName: "xmark.circle.fill").font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 6)
+        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal)
     }
     
     private func sendVoice(url: URL, duration: Int) async {
@@ -351,6 +495,102 @@ struct ChatView: View {
         }
     }
     
+    // MARK: - 消息列表视图(拆成独立计算属性避免 SwiftUI 类型推断超时)
+    @ViewBuilder
+    private var messageListView: some View {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let filtered: [DecryptedMsg] = query.isEmpty
+            ? viewModel.messages
+            : viewModel.messages.filter { $0.text.localizedCaseInsensitiveContains(query) }
+        ForEach(filtered) { msg in
+            MessageBubbleView(
+                msg: msg,
+                onCopy: { copyToClipboard(msg.text) },
+                onDelete: viewModel.messages.contains(where: { $0.id == msg.id }) ? { viewModel.deleteMessage(msg.id) } : nil,
+                onForward: { forwardMsg = msg; showForwardSheet = true },
+                isStarred: starredMsgIds.contains(msg.id),
+                onStar: { Task { await toggleStar(msg) } },
+                onPlayVoice: makeVoicePlayAction(msg),
+                attachmentContext: makeAttachmentContext(msg),
+                onSaveImage: makeSaveImageAction(msg),
+                onShareFile: { url in Task { await shareDecrypted(url: url) } },
+                onQuote: { quoteMsg = $0 }
+            )
+            .id(msg.id)
+        }
+        if !query.isEmpty && filtered.isEmpty {
+            Text("未找到匹配「\(query)」的消息")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding()
+        }
+    }
+
+    // MARK: - 附件媒体(图片缩略图/视频播放/文件分享)
+    private func makeAttachmentContext(_ msg: DecryptedMsg) -> AttachmentContext? {
+        guard msg.kind == "attachment",
+              let key = viewModel.currentSessionKey,
+              let token = AppState.shared.authToken else { return nil }
+        return AttachmentContext(roomId: session.roomId, sessionKey: key, token: token)
+    }
+
+    /// 引用卡片（显示在输入框上方，点击可取消）
+    private var quoteCard: some View {
+        Group {
+            if let qm = quoteMsg {
+                HStack(spacing: 8) {
+                    Rectangle().fill(Color.accentColor).frame(width: 3).cornerRadius(2)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(qm.label).font(.caption2).foregroundStyle(.secondary)
+                        Text(qm.text.count > 30 ? String(qm.text.prefix(30)) + "…" : qm.text)
+                            .font(.caption)
+                            .lineLimit(1)
+                            .foregroundStyle(.primary)
+                    }
+                    Spacer(minLength: 8)
+                    Button { quoteMsg = nil } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(8)
+                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
+
+    /// 图片附件「保存到相册」: 解密到本地临时文件 → 写系统相册(需相册写入授权)
+    private func makeSaveImageAction(_ msg: DecryptedMsg) -> (() -> Void)? {
+        guard msg.kind == "attachment",
+              msg.att?.mime.hasPrefix("image/") == true else { return nil }
+        return { [weak viewModel] in
+            Task {
+                guard let vm = viewModel,
+                      let token = AppState.shared.authToken,
+                      let key = vm.currentSessionKey else { return }
+                do {
+                    let url = try await attachmentDownloadAndDecrypt(
+                        attId: msg.att!.attId, token: token, sessionKey: key,
+                        roomId: self.session.roomId, ts: msg.ts)
+                    guard let data = try? Data(contentsOf: url), let img = UIImage(data: data) else { return }
+                    let ok = await AttachmentSaver.ensurePhotoAddPermission()
+                    if ok { AttachmentSaver.saveImage(img) }
+                } catch {
+                    print("[SaveImage] \(error)")
+                }
+            }
+        }
+    }
+
+    /// 解密后的文件 → 系统分享面板
+    @MainActor
+    private func shareDecrypted(url: URL) {
+        let ac = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rc = scene.keyWindow?.rootViewController else { return }
+        rc.present(ac, animated: true)
+    }
+
     // MARK: - 收藏
     private func toggleStar(_ msg: DecryptedMsg) async {
         guard let token = AppState.shared.authToken else { return }
@@ -569,17 +809,42 @@ struct MessageBubbleView: View {
     let isStarred: Bool
     let onStar: () -> Void
     let onPlayVoice: (() -> Void)?
-    
+    /// 账号聊天传入(图片/视频/文件附件的解密渲染上下文); 临时/邀请聊天附件不支持, 留 nil 走纯文本
+    var attachmentContext: AttachmentContext? = nil
+    /// 图片保存到相册
+    var onSaveImage: (() -> Void)? = nil
+    /// 文件附件分享(点击文件卡片触发)
+    var onShareFile: ((URL) -> Void)? = nil
+    /// 引用此消息（仅非附件）
+    var onQuote: ((DecryptedMsg) -> Void)? = nil
+
+    /// 该消息是否渲染附件媒体(图片/视频/文件)
+    private var showsMedia: Bool {
+        guard msg.kind == "attachment", let att = msg.att, attachmentContext != nil else { return false }
+        return att.mime.hasPrefix("audio/") == false   // 语音保持文本气泡+点按播放
+    }
+
     var body: some View {
         HStack {
             if msg.mine { Spacer(minLength: 60) }
             VStack(alignment: msg.mine ? .trailing : .leading, spacing: 3) {
                 if !msg.mine { Text(msg.label).font(.caption2).foregroundStyle(.secondary) }
-                Text(msg.text)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(msg.mine ? Color.accentColor.opacity(0.9) : Color(.systemGray6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .foregroundStyle(msg.mine ? .white : .primary)
-                    .textSelection(.enabled)
+                if showsMedia {
+                    if let ctx = attachmentContext, let att = msg.att {
+                        AttachmentMediaView(msg: msg, roomId: ctx.roomId, sessionKey: ctx.sessionKey,
+                                            token: ctx.token, onShareFile: onShareFile)
+                    } else {
+                        Text(msg.text)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                } else {
+                    Text(msg.text)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(msg.mine ? Color.accentColor.opacity(0.9) : Color(.systemGray6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .foregroundStyle(msg.mine ? .white : .primary)
+                        .textSelection(.enabled)
+                }
                 HStack(spacing: 4) {
                     Text(TimeUtil.formatTime(msg.ts)).font(.caption2).foregroundStyle(Color(.tertiaryLabel))
                     if msg.mine {
@@ -590,6 +855,13 @@ struct MessageBubbleView: View {
             }
             .contextMenu {
                 if msg.text.count > 0 { Button { onCopy() } label: { Label("复制", systemImage: "doc.on.doc") } }
+                if msg.att?.mime.hasPrefix("image/") == true, let save = onSaveImage {
+                    Button { save() } label: { Label("保存到相册", systemImage: "square.and.arrow.down.on.square") }
+                }
+                // 引用此消息 (仅非附件消息)
+                if msg.kind == "msg" {
+                    Button { onQuote?(msg) } label: { Label("引用", systemImage: "quote.bubble") }
+                }
                 Button { onStar() } label: { Label(isStarred ? "取消收藏" : "收藏", systemImage: isStarred ? "star.fill" : "star") }
                 if let onForward = onForward { Button { onForward() } label: { Label("转发", systemImage: "arrowshape.turn.up.right") } }
                 if msg.mine {

@@ -9,6 +9,7 @@ import UIKit
 /// 本页**不再**放置独立的「退出登录」区(用户明确要求:两个登出按钮只留里面的)。
 struct MeTab: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var channel = NetworkChannel.shared // 网络通道状态(UI 刷新跟随探测结果)
     @State private var showLogin = false
     @State private var logContent = ""
     @State private var showLogSheet = false
@@ -20,6 +21,11 @@ struct MeTab: View {
     @State private var avatarBusy = false
     @State private var avatarError: String?
     @State private var showAvatarActions = false
+    // 密钥包导出/导入
+    @State private var showKeyExport = false
+    @State private var showKeyImport = false
+    @State private var keyPin = ""
+    @State private var keyResult: String? = nil
 
     enum UploadStatus: Equatable {
         case idle, uploading, success, failed(String)
@@ -29,6 +35,114 @@ struct MeTab: View {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
         let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         return "\(v) (\(b))"
+    }
+
+    /// 网络通道当前状态文案(设置页「网络通道」区段)
+    private var channelStatusText: String {
+        switch channel.mode {
+        case .auto:
+            let active = channel.activeChannel.displayName
+            return "自动(当前: \(active))"
+        case .domestic: return "国内直连"
+        case .intl: return "国际 CF"
+        }
+    }
+
+    /// 实名认证状态徽章(拆分计算属性避免 SwiftUI 类型检查超时)
+    private var realnameBadge: some View {
+        Group {
+            if appState.realnameVerified {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.caption).foregroundStyle(.green)
+                    Text(appState.realnameNameMasked ?? "已认证")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("未认证")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// 密钥管理视图（已登录时返回 Section，否则 EmptyView）
+    private var keyManagementContent: some View {
+        Group {
+            if appState.isLoggedIn {
+                Section(content: {
+                    Button { showKeyExport = true } label: {
+                        HStack {
+                            Image(systemName: "key.fill").foregroundStyle(.orange)
+                            Text("导出加密身份包")
+                            Spacer()
+                        }
+                    }
+                    Button { showKeyImport = true } label: {
+                        HStack {
+                            Image(systemName: "key.fill").foregroundStyle(.green)
+                            Text("导入加密身份包")
+                            Spacer()
+                        }
+                    }
+                }, footer: {
+                    Text("导出可携带到你的其他设备上使用同一身份；导入会覆盖本机现有身份，慎用。两者均经过口令加密保护，仅存储于本地 Keychain，服务器不保存明文私钥。")
+                })
+            }
+        }
+    }
+
+    /// 账号详情页的行(拆分计算属性避免 SwiftUI 类型检查超时)
+    @ViewBuilder
+    private var accountDetailRows: some View {
+        Button {
+            showNicknameEdit = true
+        } label: {
+            HStack(spacing: 12) {
+                meIcon("pencil", .blue)
+                Text("修改账号名称")
+                Spacer()
+                Text(appState.displayName)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Image(systemName: "chevron.right")
+                    .font(.caption).foregroundStyle(.tertiary)
+            }
+        }
+        PhotosPicker(selection: $avatarItem, matching: .images, photoLibrary: .shared()) {
+            HStack(spacing: 12) {
+                meIcon("photo.circle", .purple)
+                Text(appState.avatarUpdatedAt == nil ? "上传头像" : "更换头像")
+                Spacer()
+                if avatarBusy { ProgressView().controlSize(.small) }
+                Image(systemName: "chevron.right")
+                    .font(.caption).foregroundStyle(.tertiary)
+            }
+        }
+        if appState.avatarUpdatedAt != nil {
+            Button {
+                showAvatarActions = true
+            } label: {
+                HStack(spacing: 12) {
+                    meIcon("trash", .red)
+                    Text("移除头像").foregroundStyle(.red)
+                    Spacer()
+                }
+            }
+        }
+        Button {
+            showRealName = true
+        } label: {
+            HStack(spacing: 12) {
+                meIcon("person.text.rectangle", .green)
+                Text("实名认证")
+                Spacer()
+                realnameBadge
+                Image(systemName: "chevron.right")
+                    .font(.caption).foregroundStyle(.tertiary)
+            }
+        }
     }
 
     var body: some View {
@@ -104,63 +218,7 @@ struct MeTab: View {
                         } label: {
                             meRow("账号与安全", icon: "lock.shield", tint: .gray)
                         }
-                        Button {
-                            showNicknameEdit = true
-                        } label: {
-                            HStack(spacing: 12) {
-                                meIcon("pencil", .blue)
-                                Text("修改账号名称")
-                                Spacer()
-                                Text(appState.displayName)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                Image(systemName: "chevron.right")
-                                    .font(.caption).foregroundStyle(.tertiary)
-                            }
-                        }
-                        PhotosPicker(selection: $avatarItem, matching: .images, photoLibrary: .shared()) {
-                            HStack(spacing: 12) {
-                                meIcon("photo.circle", .purple)
-                                Text(appState.avatarUpdatedAt == nil ? "上传头像" : "更换头像")
-                                Spacer()
-                                if avatarBusy { ProgressView().controlSize(.small) }
-                                Image(systemName: "chevron.right")
-                                    .font(.caption).foregroundStyle(.tertiary)
-                            }
-                        }
-                        if appState.avatarUpdatedAt != nil {
-                            Button {
-                                showAvatarActions = true
-                            } label: {
-                                HStack(spacing: 12) {
-                                    meIcon("trash", .red)
-                                    Text("移除头像").foregroundStyle(.red)
-                                    Spacer()
-                                }
-                            }
-                        }
-                        Button {
-                            showRealName = true
-                        } label: {
-                            HStack(spacing: 12) {
-                                meIcon("person.text.rectangle", .green)
-                                Text("实名认证")
-                                Spacer()
-                                if appState.realnameVerified {
-                                    Image(systemName: "checkmark.seal.fill")
-                                        .font(.caption).foregroundStyle(.green)
-                                    Text(appState.realnameNameMasked ?? "已认证")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                } else {
-                                    Text("未认证")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Image(systemName: "chevron.right")
-                                    .font(.caption).foregroundStyle(.tertiary)
-                            }
-                        }
+                        accountDetailRows
                     } else {
                         Button {
                             showLogin = true
@@ -196,6 +254,49 @@ struct MeTab: View {
                     LabeledContent("密钥", value: "本机 Keychain")
                     LabeledContent("水印", value: "无")
                     LabeledContent("后台隐私", value: "强制模糊")
+                }
+
+                // 密钥包导出/导入 (迁移设备用)
+                keyManagementContent
+
+                // 网络通道(双通道直连: 国内 IP 直连 vs 国际 CF)
+                Section {
+                    Picker("连接通道", selection: Binding(
+                        get: { NetworkChannel.shared.mode },
+                        set: { NetworkChannel.shared.setMode($0) }
+                    )) {
+                        ForEach(NetworkChannel.Mode.allCases) { m in
+                            Text(m.displayName).tag(m)
+                        }
+                    }
+                    .pickerStyle(.inline)
+
+                    LabeledContent("当前通道", value: channelStatusText)
+                    if NetworkChannel.shared.probing {
+                        HStack {
+                            ProgressView()
+                            Text("正在探测各通道延迟…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    if let d = NetworkChannel.shared.domesticLatencyMs,
+                       let i = NetworkChannel.shared.intlLatencyMs {
+                        LabeledContent("探测延迟", value: "国内 \(d)ms · 国际 \(i)ms")
+                    }
+                    if let e = NetworkChannel.shared.channelError {
+                        Text(e).font(.caption).foregroundStyle(.red)
+                    }
+                    Button {
+                        Task { await NetworkChannel.shared.reprobe() }
+                    } label: {
+                        Label("重新探测", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(NetworkChannel.shared.probing)
+                } header: {
+                    Text("网络通道")
+                } footer: {
+                    Text("自动:并发探测国内直连与国际通道,选更快且可达者。国内直连走服务器 IP + 证书指纹校验(防中间人),国际走 Cloudflare。通道切换后新的连接自动跟随,已打开的房间需断开重连才切到新通道。")
                 }
 
                 // 诊断支持(保留原 SettingsView 日志上传)
@@ -271,6 +372,12 @@ struct MeTab: View {
             .sheet(isPresented: $showRealName) {
                 RealNameView()
                     .environmentObject(appState)
+            }
+            .sheet(isPresented: $showKeyExport) {
+                KeyExportView(token: appState.authToken ?? "")
+            }
+            .sheet(isPresented: $showKeyImport) {
+                KeyImportView()
             }
             .onChange(of: avatarItem) { _, item in
                 Task { await pickAvatar(item) }
@@ -680,6 +787,172 @@ struct CredentialBindSheet: View {
             } else {
                 errorMessage = "绑定失败：\(error.localizedDescription)"
             }
+        }
+    }
+}
+
+// MARK: - 密钥包导出
+
+struct KeyExportView: View {
+    @Environment(\.dismiss) private var dismiss
+    let token: String
+    @State private var pin = ""
+    @State private var result: String? = nil
+    @State private var errorMessage: String?
+    @State private var busy = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("设置口令") {
+                    SecureField("输入导出口令(用于加密身份包)", text: $pin)
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                        .textFieldStyle(.roundedBorder)
+                    Text("口令仅在本地使用,不会上传服务器。忘记口令将导致此身份包永久无法导入。").font(.caption).foregroundStyle(.secondary).padding(.vertical, 4)
+                }
+                if let err = errorMessage {
+                    Section {
+                        Text(err).font(.footnote).foregroundStyle(.red)
+                    }
+                }
+                Section("状态") {
+                    if busy {
+                        HStack { ProgressView(); Text("正在导出…") }
+                    } else if let r = result {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("导出成功! 复制下方内容保存,或点击「保存到文件」分享给设备。").font(.subheadline)
+                                .foregroundStyle(.green)
+                            Text(r.prefix(60) + (r.count > 60 ? "…" : ""))
+                                .font(.system(.caption, design: .monospaced))
+                                .padding(8)
+                                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 6))
+                                .textSelection(.enabled)
+                        }
+                    } else {
+                        Text("尚未导出").font(.callout).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("导出身份包")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    if busy {
+                        ProgressView()
+                    } else {
+                        Button("导出") { Task { await doExport() } }
+                            .disabled(pin.isEmpty || busy)
+                    }
+                }
+            }
+        }
+    }
+
+    private func doExport() async {
+        busy = true
+        errorMessage = nil
+        defer { busy = false }
+        do {
+            guard let identity = IdentityStore.load() else {
+                errorMessage = "本机无身份数据"; return
+            }
+            let pkg = try IdentityCrypto.exportEncryptedPackage(identity: identity, pin: pin)
+            result = pkg
+            // 尝试保存到服务器(供其他设备拉取)
+            if !token.isEmpty {
+                do {
+                    try await KeysAPI.saveExportPackage(pkg: pkg, deviceId: identity.deviceId, token: token)
+                } catch {
+                    print("[KeyExport] server save failed: \(error)")
+                }
+            }
+        } catch {
+            errorMessage = "导出失败: \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - 密钥包导入
+
+struct KeyImportView: View {
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var appState = AppState.shared
+    @State private var pasteBoardText = ""
+    @State private var pin = ""
+    @State private var errorMessage: String?
+    @State private var success = false
+    @State private var busy = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("粘贴身份包") {
+                    TextField("粘贴导出的 JSON 文本", text: $pasteBoardText)
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                        .lineLimit(3...6)
+                        .textFieldStyle(.roundedBorder)
+                    Button("从剪贴板粘贴") {
+                        pasteBoardText = UIPasteboard.general.string ?? ""
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                Section("输入口令") {
+                    SecureField("输入导出时的口令", text: $pin)
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                        .textFieldStyle(.roundedBorder)
+                }
+                if let err = errorMessage {
+                    Section {
+                        Text(err).font(.footnote).foregroundStyle(.red)
+                    }
+                }
+                if success {
+                    Section {
+                        Text("导入成功！请重新登录以刷新会话。").font(.subheadline).foregroundStyle(.green)
+                    }
+                }
+                if !appState.isLoggedIn {
+                    Section("提示") {
+                        Text("请先登录后再导入身份包,以保证服务端关联正确。").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("导入身份包")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    if busy { ProgressView() }
+                    else {
+                        Button("导入") { Task { await doImport() } }
+                            .disabled(pasteBoardText.isEmpty || pin.isEmpty || busy)
+                    }
+                }
+            }
+        }
+    }
+
+    private func doImport() async {
+        busy = true
+        errorMessage = nil
+        defer { busy = false }
+        do {
+            let identity = try IdentityCrypto.importEncryptedPackage(pasteBoardText, pin: pin)
+            try IdentityStore.save(identity)
+            success = true
+            // 同时把新身份同步到服务器(用当前 token)
+            if let token = appState.authToken {
+                let pkg = try IdentityCrypto.exportEncryptedPackage(identity: identity, pin: pin)
+                try await KeysAPI.saveExportPackage(pkg: pkg, deviceId: identity.deviceId, token: token)
+            }
+            errorMessage = nil
+            dismiss()
+        } catch {
+            errorMessage = "导入失败: \(error.localizedDescription)"
         }
     }
 }

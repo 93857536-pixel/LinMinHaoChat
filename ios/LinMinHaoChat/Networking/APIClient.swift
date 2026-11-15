@@ -18,17 +18,30 @@ struct ApiError: Error, LocalizedError {
 }
 
 /// REST API 客户端 —— 与 web/src/api.ts 对应,统一错误处理。
-/// 基址自动指向 https://chat.linminhao.top/api,用户无需也不应知道该地址。
+/// 基址跟随 NetworkChannel 活动通道: domestic(112.126.79.9 直连,SPKI pin)或 intl(CF)。
 enum APIClient {
+    /// 带证书 pinning 委托的会话: domestic 通道的自签证书靠 pin 放行, 其余走系统信任链。
+    /// 注意: 单例 session 在 App 生命周期内不重建; 通道切换时 host 随之变化,
+    /// TLS 挑战回调实时读 NetworkChannel.shared.activeChannel, 无需重建。
     static let session: URLSession = {
         let c = URLSessionConfiguration.default
         c.timeoutIntervalForRequest = 20
         c.waitsForConnectivity = true
-        return URLSession(configuration: c)
+        return URLSession(configuration: c, delegate: PinnedTrustDelegate.shared, delegateQueue: nil)
     }()
 
     static func url(_ path: String) -> URL {
         URL(string: AppEnvironment.apiBaseURL + path)!
+    }
+
+    /// 构造请求: 统一禁用 HTTP/3(QUIC)。
+    /// 原因: QUIC 的证书校验不走 URLSessionDelegate 认证挑战回调, 国内直连通道的
+    /// 自签证书会被系统直接拒绝(-9802), 且没有机会按证书指纹放行。强制 TCP/TLS 后
+    /// 由 PinnedTrustDelegate 校验证书 SHA256 通过。
+    private static func makeRequest(_ path: String) -> URLRequest {
+        var req = URLRequest(url: url(path))
+        if #available(iOS 14.0, *) { req.assumesHTTP3Capable = false }
+        return req
     }
 
     /// 通用请求。body 为 [String: Any] 时走 JSONSerialization;为 Encodable 时走 JSONEncoder。
@@ -38,7 +51,7 @@ enum APIClient {
         body: Any? = nil,
         token: String? = nil
     ) async throws -> T {
-        var req = URLRequest(url: url(path))
+        var req = makeRequest(path)
         req.httpMethod = method ?? (body != nil ? "POST" : "GET")
         if let body {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -62,7 +75,7 @@ enum APIClient {
         contentType: String? = nil,
         token: String? = nil
     ) async throws -> Data {
-        var req = URLRequest(url: url(path))
+        var req = makeRequest(path)
         req.httpMethod = method
         req.httpBody = bodyData
         if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
@@ -79,13 +92,16 @@ enum APIClient {
     static func sendRaw(_ req: URLRequest) async throws -> Data {
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse else {
+            NetworkChannel.shared.noteFailure()
             throw ApiError(status: -1, message: "网络错误")
         }
         guard (200...299).contains(http.statusCode) else {
             let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             let msg = (dict?["error"] as? String) ?? (dict?["message"] as? String) ?? "请求失败(\(http.statusCode))"
+            // 传输层 4xx/5xx 不算通道故障(服务正常响应), 不触发通道自愈
             throw ApiError(status: http.statusCode, message: msg, data: dict)
         }
+        NetworkChannel.shared.noteSuccess()
         return data
     }
 }
@@ -285,6 +301,12 @@ enum KeysAPI {
     /// 查询用户公钥(创建会话用;对应 server GET /keys/public/:userId)
     static func getUserKeys(_ userId: Int, token: String) async throws -> UserKeysResult {
         try await APIClient.request("/keys/public/\(userId)", token: token)
+    }
+
+    /// 导入加密身份包到本地 Keychain(同时保存到服务器)
+    static func importEncryptedPackage(pkg: String, pin: String, token: String) async throws {
+        struct R: Decodable { let ok: Bool }
+        _ = try await APIClient.request("/keys/import-package", body: ["pkg": pkg, "pin": pin], token: token) as R
     }
 }
 

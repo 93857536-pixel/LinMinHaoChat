@@ -70,6 +70,10 @@ struct DecryptedMsg: Identifiable, Equatable {
     let kind: String       // msg | attachment
     var att: AttachmentInfo?
     var isRead: Bool = false
+    /// 引用回复目标消息 ID（nil = 无引用）。由 UI 层缓存，不从服务器解析。
+    var quoteId: String? = nil
+    /// 引用的文本预览（UI 层缓存）
+    var quoteText: String? = nil
 
     
     struct AttachmentInfo: Equatable {

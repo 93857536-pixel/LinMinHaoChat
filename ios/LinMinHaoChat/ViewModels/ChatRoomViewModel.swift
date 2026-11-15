@@ -238,7 +238,7 @@ final class ChatRoomViewModel: ObservableObject {
     }
 
     // MARK: - 发送
-    func send(_ text: String) async {
+    func send(_ text: String, quoteMsgId: String? = nil) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !sending, let sessionKey = keyCache else { return }
         sending = true
@@ -246,24 +246,35 @@ final class ChatRoomViewModel: ObservableObject {
 
         let ts = TimeUtil.nowMs
         let targetSeq = lastSeq + 1
+        // 如果引用了某条消息, 在纯文本前追加引用标记
+        var plainText = trimmed
+        if let qid = quoteMsgId, let qtext = quoteTextMap[qid] {
+            let encodedQ = MessageCrypto.encodeMessageBody(text: qtext)
+            plainText = "{\"q\":\(encodedQ)}\(trimmed.isEmpty ? "" : "\(trimmed)")"
+        }
         do {
             let enc = try MessageCrypto.encryptMessage(sessionKey: sessionKey,
-                                                       plaintext: MessageCrypto.encodeMessageBody(text: trimmed),
+                                                       plaintext: MessageCrypto.encodeMessageBody(text: plainText),
                                                        roomId: roomId, seq: targetSeq, ts: ts)
             let r = try await ChatAPI.send(roomId, iv: enc.iv, cipher: enc.ct,
                                            seq: targetSeq, ts: ts, kind: "msg", token: token)
             lastSeq = r.seq
             messages.append(DecryptedMsg(id: r.id, seq: r.seq, label: "我", mine: true,
-                                         text: trimmed, ts: r.ts, kind: "msg"))
+                                         text: trimmed, ts: r.ts, kind: "msg",
+                                         quoteId: quoteMsgId))
         } catch let e as ApiError where e.status == 409 {
             if let expected = e.data?["seq"] as? Int {
                 lastSeq = expected - 1
-                if lastSeq < targetSeq - 1 { await send(text) }
+                if lastSeq < targetSeq - 1 { await send(trimmed, quoteMsgId: quoteMsgId) }
             }
         } catch {
             errorMessage = "发送失败:\(error.localizedDescription)"
         }
     }
+
+    /// 服务端不发 quote 字段; 仅本地产生的消息保留 id→text 映射, 用于回显引用头
+    private var quoteTextMap: [String: String] = [:]
+    func markQuoteRef(_ msg: DecryptedMsg, _ text: String) { quoteTextMap[msg.id] = text }
 
     // MARK: - 删除单条消息(仅本地,服务器不删)
     func deleteMessage(_ msgId: String) {
