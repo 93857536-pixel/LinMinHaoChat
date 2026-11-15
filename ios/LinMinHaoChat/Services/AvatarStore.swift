@@ -114,6 +114,9 @@ struct UserAvatar: View {
     var size: CGFloat = 44
 
     @State private var image: UIImage?
+    /// 观察头像存储:本人换/移除头像后 myAvatarUpdatedAt(版本号)变化 →
+    /// task id 变化 → 立即重取(命中缓存,无网络),不必退出重进
+    @ObservedObject private var avatarStore = AvatarStore.shared
 
     var body: some View {
         Group {
@@ -129,8 +132,8 @@ struct UserAvatar: View {
             }
         }
         .accessibilityLabel(label)
-        .task(id: "\(userId)|\(hasAvatar.map(String.init) ?? "-")") {
-            image = await AvatarStore.shared.image(userId: userId, hasAvatar: hasAvatar)
+        .task(id: "\(userId)|\(hasAvatar.map(String.init) ?? "-")|\(avatarStore.myAvatarUpdatedAt ?? 0)") {
+            image = await avatarStore.image(userId: userId, hasAvatar: hasAvatar)
         }
     }
 }
