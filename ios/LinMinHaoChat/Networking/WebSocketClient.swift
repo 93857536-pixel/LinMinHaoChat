@@ -71,9 +71,15 @@ private final class WSDelegate: NSObject, URLSessionWebSocketDelegate {
         onClose?(closeCode.rawValue)
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    /// TLS 挑战: 国内直连通道(112.126.79.9)自签证书靠 SPKI pin 放行
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        PinnedTrust.handleTLSChallenge(challenge, completionHandler)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: NSError?) {
         // 传输级错误(断网/超时)不算服务器主动 close;此处仅当未收到 close 帧时触发
-        if let error = error as NSError?, error.code != NSURLErrorCancelled {
+        if let error = error, error.code != NSURLErrorCancelled {
             onClose?(-1)
         }
     }
@@ -114,6 +120,7 @@ final class WebSocketClient {
         let d = WSDelegate()
         let cfg = URLSessionConfiguration.default
         cfg.waitsForConnectivity = false
+        // 带证书 pinning 委托: domestic 通道 wss://112.126.79.9 的自签证书靠 pin 放行
         session = URLSession(configuration: cfg, delegate: d, delegateQueue: .main)
         delegate = d
         d.onOpen = { [weak self] in self?.handleOpen() }
@@ -159,7 +166,11 @@ final class WebSocketClient {
 
     private func open(url: URL) {
         status = .connecting
-        let task = session.webSocketTask(with: url)
+        // 用 URLRequest 建 WS 任务: 必须禁用 HTTP/3(QUIC), 否则国内直连通道的
+        // 自签证书在 QUIC 路径上会被系统直接拒绝(-9802), 不走我们的 pin 回调。
+        var req = URLRequest(url: url)
+        if #available(iOS 14.0, *) { req.assumesHTTP3Capable = false }
+        let task = session.webSocketTask(with: req)
         self.task = task
         task.resume()
         startHeartbeat()

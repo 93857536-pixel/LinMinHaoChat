@@ -1,18 +1,19 @@
 import Foundation
 
 /// 应用环境配置。
-/// 正式后端固定为 chat.linminhao.top —— 用户不需要知道、也不需要输入这个地址,
-/// App 内部自动连接(产品定位第五条)。
-/// 2026-10-05: 后端从根域名迁移到 chat 子域名(根域名不再承载应用服务)。
+/// 后端端点由 NetworkChannel 决定(双通道,桌面方案 linminhao-chat-双通道直连方案.md):
+///   domestic: 112.126.79.9 直连 443(自签证书 + SPKI pinning, 国内单跳 30-60ms)
+///   intl:     chat.linminhao.top(Cloudflare, 海外 200-500ms)
+/// host/apiBase/wsBase 全部跟随当前活动通道; 探测完成前默认 intl, 与旧行为一致。
 enum AppEnvironment {
-    /// 生产后端主机
-    static let host = "chat.linminhao.top"
+    /// 当前活动后端主机(跟随 NetworkChannel)
+    static var host: String { NetworkChannel.shared.activeChannel.host }
     /// REST API 基址
-    static let apiBase = "https://\(host)/api"
-    /// WebSocket 基址(join 返回的 wsUrl 为准,这里仅兜底)
-    static let wsBase = "wss://\(host)/ws"
+    static var apiBase: String { "https://\(host)/api" }
+    /// WebSocket 基址(join 返回的 wsUrl 为准, 这里仅兜底)
+    static var wsBase: String { "wss://\(host)/ws" }
 
-    /// 开发期可覆盖为本地后端(仅 Debug 构建生效;Release 永远走生产)。
+    /// 开发期可覆盖为本地后端(仅 Debug 构建生效; Release 永远走生产通道)。
     #if DEBUG
     static var apiBaseURL: String {
         if let v = UserDefaults.standard.string(forKey: "lmh.dev.apiBase"), !v.isEmpty { return v }
