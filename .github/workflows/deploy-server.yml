@@ -29,7 +29,8 @@ jobs:
           cache-dependency-path: server/package-lock.json
 
       - name: Install dependencies
-        run: cd server && npm ci --only=production
+        # 必须包含 devDependencies: tsc 在 devDeps 里,只装 prod 会导致 build 报 tsc: not found
+        run: cd server && npm ci --include=dev
 
       - name: Build TypeScript
         run: cd server && npm run build
