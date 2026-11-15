@@ -11,3 +11,4 @@ ios/*.ipa
 /*.ipa
 ssh-keys/
 deploy-server.sh
+BuildArtifacts/
