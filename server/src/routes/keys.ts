@@ -28,13 +28,31 @@ keysRouter.post('/register', (req, res) => {
   res.json({ ok: true });
 });
 
-/** 保存加密导出包(仅保留最新一份) */
+/** 保存加密导出包(仅保留最新一份) — 限流防暴力破解 PBKDF2 口令 */
 keysRouter.post('/export-package', (req, res) => {
+  const ip = clientIp(req);
+  const r = rateLimit(`keys:export:${ip}`, 3, 10 * 60_000, 5 * 60_000);
+  if (!r.ok) return res.status(429).json({ error: 'rate_limited', retryAfterSec: r.retryAfterSec });
+
   const { pkg } = req.body || {};
   if (!pkg || typeof pkg !== 'string' || pkg.length > 64 * 1024) return res.status(400).json({ error: 'bad_pkg' });
   const dev = String((req.body || {}).deviceId || 'default').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 'default';
   db.prepare('UPDATE user_keys SET export_pkg=? WHERE user_id=? AND device_id=?').run(pkg, req.user!.id, dev);
   logger.info('export_package_saved', { userId: req.user!.id, device: dev });
+  res.json({ ok: true });
+});
+
+/** 导入并同步加密导出包到服务器(客户端本地解密后用此接口上传新身份) */
+keysRouter.post('/import-package', (req, res) => {
+  const ip = clientIp(req);
+  const r = rateLimit(`keys:import:${ip}`, 3, 10 * 60_000, 5 * 60_000);
+  if (!r.ok) return res.status(429).json({ error: 'rate_limited', retryAfterSec: r.retryAfterSec });
+
+  const { pkg } = req.body || {};
+  if (!pkg || typeof pkg !== 'string' || pkg.length > 64 * 1024) return res.status(400).json({ error: 'bad_pkg' });
+  const dev = String((req.body || {}).deviceId || 'default').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 'default';
+  db.prepare('UPDATE user_keys SET export_pkg=? WHERE user_id=? AND device_id=?').run(pkg, req.user!.id, dev);
+  logger.info('import_package_synced', { userId: req.user!.id, device: dev });
   res.json({ ok: true });
 });
 

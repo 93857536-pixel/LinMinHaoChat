@@ -182,20 +182,18 @@ function broadcastToRoom(kind: 'user' | 'temp', roomId: string, payload: unknown
 
 function broadcastPresence(conn: Conn) {
   if (!conn.roomId) return;
-  const { list, ips } = onlineFor(conn.roomId, conn.kind);
-  const payload = { type: 'presence', roomId: conn.roomId, online: list, onlineIps: ips };
+  const { list } = onlineFor(conn.roomId, conn.kind);
+  const payload = { type: 'presence', roomId: conn.roomId, online: list };
   broadcastToRoom(conn.kind, conn.roomId, payload);
 }
 
-/** 返回在线身份列表 + 按 IP 去重后的在线人数(用于"X 个IP在线"统计) */
-function onlineFor(roomId: string, kind: 'user' | 'temp'): { list: (number | string)[]; ips: number } {
+/** 返回在线身份列表(不暴露 IP;IP 信息仅用于服务器侧限流与诊断) */
+function onlineFor(roomId: string, kind: 'user' | 'temp'): { list: (number | string)[] } {
   const list: (number | string)[] = [];
-  const ips = new Set<string>();
   for (const c of conns.values()) {
     if (c.kind === kind && c.roomId === roomId) {
       list.push(c.kind === 'user' ? c.userId! : c.anonId!);
-      if (c.ip) ips.add(c.ip);
     }
   }
-  return { list, ips: ips.size };
+  return { list };
 }

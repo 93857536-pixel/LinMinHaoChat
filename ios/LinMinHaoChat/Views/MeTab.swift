@@ -867,7 +867,7 @@ struct KeyExportView: View {
                 do {
                     try await KeysAPI.saveExportPackage(pkg: pkg, deviceId: identity.deviceId, token: token)
                 } catch {
-                    print("[KeyExport] server save failed: \(error)")
+                    // 静默失败:服务器端同步不是关键路径,不影响本地已保存的身份包
                 }
             }
         } catch {
