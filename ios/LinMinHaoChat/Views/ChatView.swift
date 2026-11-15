@@ -244,7 +244,7 @@ struct ChatView: View {
                         if !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             let text = inputText; inputText = ""
                             let qid = quoteMsg?.id
-                            if qid != nil { viewModel.markQuoteRef(quoteMsg!, text) }
+                            if let qm = quoteMsg { viewModel.markQuoteRef(qm, qm.text) }
                             Task { await viewModel.send(text, quoteMsgId: qid) }
                             quoteMsg = nil
                         } else {
@@ -824,6 +824,21 @@ struct MessageBubbleView: View {
         return att.mime.hasPrefix("audio/") == false   // 语音保持文本气泡+点按播放
     }
 
+    /// 气泡内的引用头(引用回复)
+    private func quoteHeader(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(msg.mine ? Color.white.opacity(0.7) : Color.secondary.opacity(0.5))
+                .frame(width: 2.5)
+            Text(text.count > 60 ? String(text.prefix(60)) + "…" : text)
+                .font(.caption2)
+                .lineLimit(2)
+                .foregroundStyle(msg.mine ? Color.white.opacity(0.85) : Color.secondary)
+        }
+        .padding(.vertical, 2).padding(.horizontal, 5)
+        .background((msg.mine ? Color.white : Color.secondary).opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+    }
+
     var body: some View {
         HStack {
             if msg.mine { Spacer(minLength: 60) }
@@ -839,9 +854,14 @@ struct MessageBubbleView: View {
                             .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                 } else {
-                    Text(msg.text)
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(msg.mine ? Color.accentColor.opacity(0.9) : Color(.systemGray6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    VStack(alignment: .leading, spacing: 5) {
+                        if let q = msg.quoteText, !q.isEmpty {
+                            quoteHeader(q)
+                        }
+                        Text(msg.text)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(msg.mine ? Color.accentColor.opacity(0.9) : Color(.systemGray6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .foregroundStyle(msg.mine ? .white : .primary)
                         .textSelection(.enabled)
                 }

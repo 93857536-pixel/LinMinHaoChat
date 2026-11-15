@@ -163,7 +163,8 @@ final class ChatRoomViewModel: ObservableObject {
         return DecryptedMsg(
             id: m.id, seq: m.seq, label: label, mine: mine,
             text: body.attachment?.name ?? body.text ?? "(无法解析的消息)",
-            ts: m.ts, kind: m.kind, att: att
+            ts: m.ts, kind: m.kind, att: att,
+            quoteText: body.quote
         )
     }
 
@@ -246,22 +247,18 @@ final class ChatRoomViewModel: ObservableObject {
 
         let ts = TimeUtil.nowMs
         let targetSeq = lastSeq + 1
-        // 如果引用了某条消息, 在纯文本前追加引用标记
-        var plainText = trimmed
-        if let qid = quoteMsgId, let qtext = quoteTextMap[qid] {
-            let encodedQ = MessageCrypto.encodeMessageBody(text: qtext)
-            plainText = "{\"q\":\(encodedQ)}\(trimmed.isEmpty ? "" : "\(trimmed)")"
-        }
+        // 引用回复: 把被引用文本编入 body 的 q 字段(合法 JSON,接收端可解析)
+        let quotedText: String? = quoteMsgId.flatMap { quoteTextMap[$0] }
         do {
             let enc = try MessageCrypto.encryptMessage(sessionKey: sessionKey,
-                                                       plaintext: MessageCrypto.encodeMessageBody(text: plainText),
+                                                       plaintext: MessageCrypto.encodeMessageBody(text: trimmed, quoteText: quotedText),
                                                        roomId: roomId, seq: targetSeq, ts: ts)
             let r = try await ChatAPI.send(roomId, iv: enc.iv, cipher: enc.ct,
                                            seq: targetSeq, ts: ts, kind: "msg", token: token)
             lastSeq = r.seq
             messages.append(DecryptedMsg(id: r.id, seq: r.seq, label: "我", mine: true,
                                          text: trimmed, ts: r.ts, kind: "msg",
-                                         quoteId: quoteMsgId))
+                                         quoteId: quoteMsgId, quoteText: quotedText))
         } catch let e as ApiError where e.status == 409 {
             if let expected = e.data?["seq"] as? Int {
                 lastSeq = expected - 1

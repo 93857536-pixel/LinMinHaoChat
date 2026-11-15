@@ -79,9 +79,28 @@ enum MessageCrypto {
         return "{\"t\":\"\(escaped)\"}"
     }
 
+    /// 引用回复消息格式: {"q":{"t":"<被引用文本>"},"t":"<新文本>"}
+    /// 与 web 端不冲突(web 不识别 q 字段,只会显示 t),iOS 端解析 q 渲染引用头。
+    static func encodeMessageBody(text: String, quoteText: String? = nil) -> String {
+        func esc(_ s: String) -> String {
+            s.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\n", with: "\\n")
+                .replacingOccurrences(of: "\r", with: "\\r")
+                .replacingOccurrences(of: "\t", with: "\\t")
+        }
+        if let q = quoteText, !q.isEmpty {
+            let qq = String(q.prefix(200))
+            return "{\"q\":{\"t\":\"\(esc(qq))\"},\"t\":\"\(esc(text))\"}"
+        }
+        return "{\"t\":\"\(esc(text))\"}"
+    }
+
     struct DecodedBody {
         var text: String?
         var attachment: AttachmentMeta?
+        /// 被引用消息的文本预览(引用回复)
+        var quote: String?
     }
 
     struct AttachmentMeta: Codable {
@@ -96,13 +115,18 @@ enum MessageCrypto {
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return DecodedBody(text: raw, attachment: nil)
         }
-        if let t = obj["t"] as? String { return DecodedBody(text: t, attachment: nil) }
+        // 引用回复: q.t 为被引用文本
+        var quote: String?
+        if let q = obj["q"] as? [String: Any], let qt = q["t"] as? String, !qt.isEmpty {
+            quote = qt
+        }
+        if let t = obj["t"] as? String { return DecodedBody(text: t, attachment: nil, quote: quote) }
         if let f = obj["f"] {
             if let att = try? JSONDecoder().decode(AttachmentMeta.self, from: JSONSerialization.data(withJSONObject: f)) {
-                return DecodedBody(text: nil, attachment: att)
+                return DecodedBody(text: nil, attachment: att, quote: quote)
             }
         }
-        return DecodedBody(text: nil, attachment: nil)
+        return DecodedBody(text: nil, attachment: nil, quote: quote)
     }
 
     /// 附件加密(自描述格式 iv||ct||tag;info=`lmh-att-v1:<roomId>:<ts>`,AAD=`<roomId>:<ts>`)。
