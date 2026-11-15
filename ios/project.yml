@@ -58,6 +58,8 @@ targets:
         NSPhotoLibraryAddUsageDescription: 用于把聊天中的图片或视频保存到相册
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: false
+          # 开发/验收: 允许 127.0.0.1 本地回环(本地抛弃式测试服务器), Release 线上流量仍全部 https
+          NSAllowsLocalNetworking: true
         # 自定义 scheme:lmhchat://invite/<id>(配合系统链接 https://chat.linminhao.top/i/<id>)
         CFBundleURLTypes:
           - CFBundleURLSchemes:

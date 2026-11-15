@@ -40,6 +40,17 @@ final class ChatListViewModel: ObservableObject {
     }
 
     func loadRooms() async {
+        // Demo 模式:直接注入模拟房间,不依赖服务器
+        if AppState.shared.isDemoMode {
+            print("[ChatsTab] DEMO: injecting seed rooms")
+            let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+            rooms = [
+                RoomMeta(id: "demo-room-chat", type: "dm", nameEnc: nil, createdAt: nowMs - 60_000, memberIds: [9999], unread: 1, lastSeq: 3),
+                RoomMeta(id: "demo-room-group", type: "group", nameEnc: nil, createdAt: nowMs - 120_000, memberIds: [9999, 8888], unread: 0, lastSeq: 5),
+                RoomMeta(id: "demo-room-search", type: "dm", nameEnc: nil, createdAt: nowMs - 10_000, memberIds: [9999], unread: 2, lastSeq: 1),
+            ]
+            return
+        }
         guard let token = AppState.shared.authToken else { rooms = []; return }
         do {
             let result = try await ChatAPI.rooms(token: token)
@@ -104,6 +115,7 @@ struct ChatsTab: View {
     @State private var showTempChat = false
     @State private var showLogin = false
     @State private var showFindFriends = false
+    @State private var navPath: [String] = []
 
     var body: some View {
         Group {

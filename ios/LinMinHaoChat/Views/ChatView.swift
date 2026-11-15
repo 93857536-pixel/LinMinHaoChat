@@ -101,11 +101,12 @@ struct ChatView: View {
     
     private let recorder = VoiceRecorder()
     private let audioPlayer = AVAudioPlayerCache()
-    
+
     init(session: ChatRoomSession) {
         self.session = session
         _viewModel = StateObject(wrappedValue: ChatRoomViewModel(roomId: session.roomId, token: session.token, identity: session.identity))
     }
+    
     
     var body: some View {
         VStack(spacing: 0) {

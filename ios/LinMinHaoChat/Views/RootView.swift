@@ -12,6 +12,10 @@ struct RootView: View {
         case chats, contacts, discover, me
     }
 
+    init() {
+        _selectedTab = State(initialValue: .chats)
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             ChatsTab()

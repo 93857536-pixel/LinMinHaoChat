@@ -25,8 +25,13 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
         return s.authorizationStatus == .authorized || s.authorizationStatus == .provisional
     }
 
-    /// 请求权限(用户会看到系统弹窗)
+    /// 请求权限(用户会看到系统弹窗;demo 模式下静默跳过)
     func requestAuthorization() async {
+        // demo 模式:直接用 provisional 状态,不走系统弹窗
+        if UserDefaults.standard.bool(forKey: "lmh.shot.demo") {
+            print("[Notification] DEMO MODE: returning provisional without dialog")
+            return
+        }
         do {
             try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])
             print("[Notification] authorization granted")

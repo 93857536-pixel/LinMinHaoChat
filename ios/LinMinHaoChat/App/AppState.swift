@@ -39,6 +39,16 @@ final class AppState: ObservableObject {
     @Published var isConnected: Bool = true
     @Published var connectionStatus: ConnectionStatus = .connected
 
+    /// 是否 Demo 模式(Debug only;UserDefaults 旗或启动参数 -lmhDemoMode)
+    var isDemoMode: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: ShotKeys.demo)
+            || CommandLine.arguments.contains("-lmhDemoMode")
+        #else
+        return false
+        #endif
+    }
+
     enum ConnectionStatus: String {
         case disconnected = "网络断开"
         case reconnecting = "正在重连…"
@@ -75,6 +85,14 @@ final class AppState: ObservableObject {
         static let emailMasked = "lmh.auth.emailMasked"
     }
 
+    /// 截图验收旗(外部用 simctl spawn defaults write 注入)
+    enum ShotKeys {
+        static let demo = "lmh.shot.demo"
+        static let tab = "lmh.shot.tab"
+        static let room = "lmh.shot.room"
+        static let keyExport = "lmh.shot.keyexport"
+    }
+
     init() {
         // 恢复认证信息
         if let tokenData = KeychainStore.load(account: "lmh.auth.token") {
@@ -85,7 +103,6 @@ final class AppState: ObservableObject {
         }
 
         // 恢复账号资料(userId / 账号 ID / 昵称 / 注册时间)
-        // 修复:此前只恢复 token,退出 App 再进入时用户名与账号 ID 显示为空
         let d = UserDefaults.standard
         if d.object(forKey: ProfileKeys.userId) != nil {
             userId = d.integer(forKey: ProfileKeys.userId)
@@ -98,33 +115,62 @@ final class AppState: ObservableObject {
         if d.object(forKey: ProfileKeys.avatarUpdatedAt) != nil {
             avatarUpdatedAt = d.object(forKey: ProfileKeys.avatarUpdatedAt) as? Int64
         }
-        // 实名状态(先本地显示,随后 refreshProfile 与服务端对齐)
         realnameStatus = d.string(forKey: ProfileKeys.rnStatus) ?? "none"
         realnameVerified = d.bool(forKey: ProfileKeys.rnVerified)
         realnameNameMasked = d.string(forKey: ProfileKeys.rnNameMasked)
         if d.object(forKey: ProfileKeys.rnVerifiedAt) != nil {
             realnameVerifiedAt = d.object(forKey: ProfileKeys.rnVerifiedAt) as? Int64
         }
-        // 登录凭据掩码(手机号/邮箱,重启后直接显示,无需二次绑定)
         phoneMasked = d.string(forKey: ProfileKeys.phoneMasked)
         emailMasked = d.string(forKey: ProfileKeys.emailMasked)
 
         // 尝试加载身份
         if let keys = try? IdentityStore.load() {
-            identity = DeviceIdentity(
-                deviceId: keys.deviceId,
-                ed25519Pub: keys.ed25519Pub,
-                ecdhPub: keys.ecdhPub
-            )
+            identity = DeviceIdentity(deviceId: keys.deviceId, ed25519Pub: keys.ed25519Pub, ecdhPub: keys.ecdhPub)
         }
 
         // 启动网络监测(定期轮询)
         startNetworkMonitoring()
 
-        // 有登录态则后台刷新资料(兼容旧版本升级/换设备后本地无资料的场景)
-        if authToken != nil {
+        // Demo 模式:纯本地硬编码数据,不依赖服务器
+        if isDemoMode {
+            print("[AppState] DEMO MODE: injecting seed data")
+            authToken = "demo-jwt"
+            sessionId = "demo-session"
+            userId = 9999
+            userHandle = "demo_user"
+            userNickname = "演示用户"
+            phoneMasked = "138****0001"
+            emailMasked = "d***@example.com"
+            realnameVerified = true
+            realnameNameMasked = "张***"
+            realnameStatus = "verified"
+            // 确保 identity 非空
+            if identity == nil {
+                identity = DeviceIdentity(deviceId: "demo-device", ed25519Pub: "", ecdhPub: "")
+            }
+            // 持久化到 UserDefaults(保证列表页能读到登录态)
+            let d = UserDefaults.standard
+            d.set(userId, forKey: ProfileKeys.userId)
+            d.set(userHandle!, forKey: ProfileKeys.handle)
+            d.set(userNickname!, forKey: ProfileKeys.nickname)
+            d.set(phoneMasked ?? "", forKey: ProfileKeys.phoneMasked)
+            d.set(emailMasked ?? "", forKey: ProfileKeys.emailMasked)
+            d.set("verified", forKey: ProfileKeys.rnStatus)
+            d.set(true, forKey: ProfileKeys.rnVerified)
+            d.set(realnameNameMasked ?? "", forKey: ProfileKeys.rnNameMasked)
+            // demo 房间标签
+            d.set("截图验收私聊", forKey: "lmh.room.label.demo-room-chat")
+            d.set("验收群聊", forKey: "lmh.room.label.demo-room-group")
+            d.set("搜索测试会话", forKey: "lmh.room.label.demo-room-search")
+        }
+
+        // 有登录态则后台刷新资料(demo 模式跳过,不发网络请求)
+        if authToken != nil, !isDemoMode {
             Task { await refreshProfile() }
         }
+
+
     }
 
     deinit {
@@ -140,19 +186,15 @@ final class AppState: ObservableObject {
         self.userId = userId
         self.userHandle = handle
         self.userNickname = nickname ?? handle
-        // 登录通道自动识别:手机号/邮箱登录成功时服务端回填已绑凭据掩码,
-        // 这里直接持久化,「我的」页立即显示登录号码,无需二次绑定;refreshProfile 仍会兜底对齐
         applyCredentialMasks(phone: phoneMasked, email: emailMasked)
         try? KeychainStore.save(Data(token.utf8), account: "lmh.auth.token")
         try? KeychainStore.save(Data(sessionId.utf8), account: "lmh.auth.session")
 
-        // 持久化账号资料(重启 App 后可直接显示,无需等网络)
         let d = UserDefaults.standard
         d.set(userId, forKey: ProfileKeys.userId)
         if let handle { d.set(handle, forKey: ProfileKeys.handle) }
         if let nn = self.userNickname { d.set(nn, forKey: ProfileKeys.nickname) }
 
-        // 加载身份
         if let keys = try? IdentityStore.load() {
             identity = DeviceIdentity(
                 deviceId: keys.deviceId,
@@ -161,9 +203,6 @@ final class AppState: ObservableObject {
             )
         }
 
-        // 登录后补拉完整资料:logout 会清空本地缓存的头像版本号与实名状态,
-        // 仅存 token/userId/handle/nickname 会导致退出重登后头像不显示、
-        // 实名要手动进一次页面才刷新。此处后台拉 /auth/me 对齐服务端。
         Task { await refreshProfile() }
     }
 
@@ -220,18 +259,15 @@ final class AppState: ObservableObject {
             if let n = userNickname { d.set(n, forKey: ProfileKeys.nickname) }
             if let ts = me.user.createdAt { d.set(ts, forKey: ProfileKeys.createdAt) }
             applyAvatar(updatedAt: me.user.hasAvatar == true ? me.user.avatarUpdatedAt : nil)
-            // 绑定凭据掩码
             phoneMasked = me.user.phoneMasked
             emailMasked = me.user.emailMasked
             if let pm = phoneMasked { d.set(pm, forKey: ProfileKeys.phoneMasked) } else { d.removeObject(forKey: ProfileKeys.phoneMasked) }
             if let em = emailMasked { d.set(em, forKey: ProfileKeys.emailMasked) } else { d.removeObject(forKey: ProfileKeys.emailMasked) }
-            // 实名状态以服务端为准
             applyRealname(status: me.user.realnameStatus ?? "none",
                           verified: me.user.realnameVerified ?? false,
                           nameMasked: me.user.realnameNameMasked,
                           verifiedAt: me.user.realnameVerifiedAt)
         } catch {
-            // 网络异常/令牌过期时不打断使用;本地缓存已可显示
             print("[AppState] refreshProfile failed: \(error.localizedDescription)")
         }
     }
@@ -285,7 +321,6 @@ final class AppState: ObservableObject {
 
     // MARK: - Network Monitoring
     private func startNetworkMonitoring() {
-        // 定期轮询检查网络
         networkTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.checkConnection()

@@ -18,8 +18,12 @@ struct LinMinHaoChatApp: App {
                 .environmentObject(appState)
                 .environmentObject(inviteSession)
                 .onAppear {
-                    // App启动时请求通知权限
-                    Task { await NotificationManager.shared.requestAuthorization() }
+                    // App启动时请求通知权限(截图验收 demo 模式跳过,避免弹窗挡画面)
+                    if !appState.isDemoMode {
+                        Task { await NotificationManager.shared.requestAuthorization() }
+                    }
+                    // 网络通道: 自动模式启动时并发探测国内直连/国际 CF, 选更快且可达者
+                    Task { await NetworkChannel.shared.reprobe() }
                 }
                 .onOpenURL { url in
                     // 系统打开链接:https://chat.linminhao.top/i/<id>... 或 lmhchat://invite/<id>
