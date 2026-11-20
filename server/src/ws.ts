@@ -25,6 +25,7 @@ interface Conn {
   anonId?: string;
   ip: string;
   lastSeen: number;
+  lastTypingAt?: number; // typing 帧防抖:每连接 1.5s 最多广播一次
 }
 
 const conns = new Map<WebSocket, Conn>();
@@ -161,6 +162,18 @@ function handleUserMessage(conn: Conn, msg: { type?: string; roomId?: string; [k
     }
   } else if (msg.type === 'ping') {
     conn.ws.send(JSON.stringify({ type: 'pong', t: Date.now() }));
+  } else if (msg.type === 'typing') {
+    // 正在输入提示:1.5s 防抖,仅广播给同房间其他连接(不含发送者自己)
+    const now = Date.now();
+    if (conn.lastTypingAt && now - conn.lastTypingAt < 1500) return;
+    conn.lastTypingAt = now;
+    const data = JSON.stringify({ type: 'typing', roomId, userId: conn.userId, ts: now });
+    for (const [ws, c] of conns) {
+      if (c === conn) continue;
+      if (c.kind === 'user' && c.roomId === roomId && ws.readyState === WebSocket.OPEN) {
+        try { ws.send(data); } catch { /* ignore */ }
+      }
+    }
   }
 }
 

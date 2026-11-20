@@ -9,9 +9,13 @@ import UserNotifications
 final class ChatRoomViewModel: ObservableObject {
     @Published var messages: [DecryptedMsg] = []
     @Published var onlineIps: Int?
+    /// 在线人数(来自 presence 帧 online 数组长度;群聊展示更直观)
+    @Published var onlineCount: Int?
     @Published var statusText = "连接中…"
     @Published var isReady = false
     @Published var errorMessage: String?
+    /// 对方正在输入(4 秒内无后续 typing 帧自动复位)
+    @Published var peerTyping = false
 
     let roomId: String
     private let token: String        // 账号 JWT
@@ -25,6 +29,8 @@ final class ChatRoomViewModel: ObservableObject {
     private var hasConnectedBefore = false
     /// 服务端上报的该用户已读到的最高 seq(0 = 未知)
     private var readSeq = 0
+    private var lastTypingSent = 0.0
+    private var typingResetTask: Task<Void, Never>?
 
     private let ws = WebSocketClient()
     let audioPlayer = AVAudioPlayerCache()
@@ -212,14 +218,27 @@ final class ChatRoomViewModel: ObservableObject {
             Task { await pullNew() }
         case "presence":
             onlineIps = frame.onlineIps
+            onlineCount = frame.online?.count
+        case "typing":
+            // 对方正在输入:仅私聊(dm)显示;群聊不区分谁在输入,统一显示
+            guard let uid = frame.userId, uid != AppState.shared.userId else { break }
+            peerTyping = true
+            typingResetTask?.cancel()
+            typingResetTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                guard !Task.isCancelled else { return }
+                self?.peerTyping = false
+            }
         case "read":
-            // 服务端推送的 read 帧:userId 是 reader,userId=me 且 lastSeq>= 我的最后 seq 时,把本机所有 mine 消息标为已读
-            if let readerId = frame.userId, let lastSeq = frame.lastSeq, readerId == AppState.shared.userId {
-                self.readSeq = lastSeq
-                // 刷新列表中 mine 消息的 isRead 状态
+            // 已读回执:userId=reader(读了消息的人),lastSeq=TA 读到的最高 seq。
+            // 修正:只有【对方】读了消息才把"我发的"消息标为已读(✓✓);
+            // 旧逻辑 readerId==me 是把自己读别人标记成了"我的消息被读",方向反了。
+            if let readerId = frame.userId, let seq = frame.lastSeq,
+               readerId != AppState.shared.userId, seq > 0 {
+                self.readSeq = seq
                 messages = messages.map { m in
                     var mm = m
-                    if mm.mine && m.seq <= lastSeq { mm.isRead = true }
+                    if mm.mine && mm.seq <= seq { mm.isRead = true }
                     return mm
                 }
             }
@@ -272,6 +291,14 @@ final class ChatRoomViewModel: ObservableObject {
     /// 服务端不发 quote 字段; 仅本地产生的消息保留 id→text 映射, 用于回显引用头
     private var quoteTextMap: [String: String] = [:]
     func markQuoteRef(_ msg: DecryptedMsg, _ text: String) { quoteTextMap[msg.id] = text }
+
+    /// 标记"我在输入"(1.5s 节流,服务端同样有防抖)
+    func notifyTyping() {
+        let now = Date().timeIntervalSince1970
+        guard now - lastTypingSent > 1.5 else { return }
+        lastTypingSent = now
+        ws.send(["type": "typing", "roomId": roomId])
+    }
 
     // MARK: - 删除单条消息(仅本地,服务器不删)
     func deleteMessage(_ msgId: String) {

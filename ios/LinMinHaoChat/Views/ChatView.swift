@@ -115,8 +115,13 @@ struct ChatView: View {
                 Circle().fill(viewModel.isReady ? Color.green : Color.orange).frame(width: 8, height: 8)
                 Text(viewModel.statusText).font(.caption)
                 Spacer()
-                if let ips = viewModel.onlineIps {
-                    Text("\(ips) 个IP在线").font(.caption).foregroundStyle(.secondary)
+                if viewModel.peerTyping {
+                    HStack(spacing: 3) {
+                        Text("对方正在输入").font(.caption).foregroundStyle(Color.accentColor)
+                        ProgressView().controlSize(.mini)
+                    }
+                } else if let n = viewModel.onlineCount, n > 0 {
+                    Text("\(n) 人在线").font(.caption).foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 8).background(.bar)
@@ -226,8 +231,9 @@ struct ChatView: View {
                 } label: { Label("文件", systemImage: "doc") }
             }
                 
-                // 文本输入
+                // 文本输入(输入时发 typing 帧,对方显示"正在输入")
                 TextField("加密消息", text: $inputText, axis: .vertical).lineLimit(1...5).focused($inputFocused).lmhChatInputBubble()
+                    .onChange(of: inputText) { _ in viewModel.notifyTyping() }
                 
                 // 发送/录音按钮
                 if isRecording {

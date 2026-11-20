@@ -57,6 +57,8 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
 
     /// 当新消息到达时调用;App在前台不弹窗只更新角标,后台则弹窗+角标
     func onNewMessage(inRoom roomId: String, senderLabel: String?, text: String) async {
+        // 免打扰: 该会话不打断(不弹窗、不更新角标),未读徽章仍在列表里显示
+        if RoomFlagsStore.shared.isMuted(roomId) { return }
         guard !isAppInForeground() else {
             updateBadgeCountFromAppState()
             return

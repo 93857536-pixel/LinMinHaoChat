@@ -23,11 +23,16 @@ final class AvatarStore: ObservableObject {
     /// 同步读缓存(不触发网络)
     func cached(userId: Int) -> UIImage? { cache.object(forKey: key(userId)) }
 
-    /// 异步取头像。hasAvatar == false 时直接走兜底(不打网络)。
+    /// 异步取头像。hasAvatar == false / 已知无头像时直接走兜底(不打网络)。
+    ///
+    /// ⚠️ 判断顺序是关键(修复"移除头像后仍显示上一张"的竞态):
+    /// 否定事实(hasAvatar==false、noAvatar 负缓存)必须【优先于】NSCache 正缓存。
+    /// 否则删除前发起的 in-flight 下载完成时会把旧图写回 NSCache,
+    /// 后续取图命中脏缓存顶掉"已删除"的事实,头像就变不回默认了。
     func image(userId: Int, hasAvatar: Bool? = nil) async -> UIImage? {
-        if let img = cache.object(forKey: key(userId)) { return img }
-        if hasAvatar == false { return nil }
-        if noAvatar.contains(userId) { return nil }  // 已知无头像(删除过): 立刻兜底,跳过网络往返
+        if hasAvatar == false { return nil }                        // 1. 调用方明确"无头像" → 兜底
+        if noAvatar.contains(userId) { return nil }                 // 2. 负缓存优先于正缓存(删了就永不回显旧图)
+        if let img = cache.object(forKey: key(userId)) { return img } // 3. 正缓存
         guard userId > 0, AppState.shared.authToken != nil else { return nil }
         if let running = inflight[userId] { return await running.value }
         guard let token = AppState.shared.authToken else { return nil }
@@ -35,6 +40,8 @@ final class AvatarStore: ObservableObject {
         let task = Task<UIImage?, Never> {
             do {
                 let data = try await AvatarAPI.download(userId: userId, token: token)
+                // 下载期间若已删除/标记无头像 → 丢弃这张旧图,绝不回写脏缓存
+                if noAvatar.contains(userId) { return nil }
                 return UIImage(data: data)
             } catch {
                 return nil
@@ -43,7 +50,9 @@ final class AvatarStore: ObservableObject {
         inflight[userId] = task
         let img = await task.value
         inflight[userId] = nil
-        if let img { cache.setObject(img, forKey: key(userId)) } else { noAvatar.insert(userId) }
+        // 仅在"仍无否定事实"时写正缓存,防止把删除前的旧图脏写回去
+        if let img, !noAvatar.contains(userId) { cache.setObject(img, forKey: key(userId)) }
+        else { noAvatar.insert(userId) }
         return img
     }
 

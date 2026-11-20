@@ -84,6 +84,14 @@ final class ChatListViewModel: ObservableObject {
         persistPinned()
     }
 
+    /// 免打扰开关(走全局 RoomFlagsStore, 与通知/角标同一数据源)
+    func toggleMuted(_ roomId: String) {
+        RoomFlagsStore.shared.toggleMuted(roomId)
+        objectWillChange.send()
+    }
+
+    func isMuted(_ roomId: String) -> Bool { RoomFlagsStore.shared.isMuted(roomId) }
+
     /// 本地清未读徽章(真正已读回执由进入聊天时 ChatAPI.markRead 完成)
     func markReadLocally(_ roomId: String) {
         for i in rooms.indices where rooms[i].id == roomId {
@@ -219,6 +227,7 @@ struct ChatsTab: View {
         let label = vm.label(for: room)
         let preview = vm.preview(for: room)
         let pinned = vm.pinnedRoomIds.contains(room.id)
+        let muted = vm.isMuted(room.id)
 
         return NavigationLink(value: room.id) {
             HStack(spacing: 12) {
@@ -230,6 +239,11 @@ struct ChatsTab: View {
                             .lineLimit(1)
                         if pinned {
                             Image(systemName: "pin.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        if muted {
+                            Image(systemName: "bell.slash.fill")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
@@ -266,6 +280,12 @@ struct ChatsTab: View {
             }
             .tint(.blue)
             Button {
+                vm.toggleMuted(room.id)
+            } label: {
+                Label(muted ? "开免打扰" : "关免打扰", systemImage: "bell.slash")
+            }
+            .tint(.orange)
+            Button {
                 vm.togglePinned(room.id)
             } label: {
                 Label(pinned ? "取消置顶" : "置顶", systemImage: "pin")
@@ -284,6 +304,11 @@ struct ChatsTab: View {
                 appState.chatListVersion += 1
             } label: {
                 Label("标记已读", systemImage: "checkmark")
+            }
+            Button {
+                vm.toggleMuted(room.id)
+            } label: {
+                Label(muted ? "关闭免打扰" : "开启免打扰", systemImage: "bell.slash")
             }
             Button {
                 vm.togglePinned(room.id)
