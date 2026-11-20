@@ -3,7 +3,7 @@ import UserNotifications
 
 @main
 struct LinMinHaoChatApp: App {
-    @StateObject private var appState = AppState()
+    @StateObject private var appState = AppState.shared
     @StateObject private var inviteSession = InviteSession()
     @Environment(\.scenePhase) private var scenePhase
 

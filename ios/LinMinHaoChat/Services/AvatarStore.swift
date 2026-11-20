@@ -27,6 +27,7 @@ final class AvatarStore: ObservableObject {
     func image(userId: Int, hasAvatar: Bool? = nil) async -> UIImage? {
         if let img = cache.object(forKey: key(userId)) { return img }
         if hasAvatar == false { return nil }
+        if noAvatar.contains(userId) { return nil }  // 已知无头像(删除过): 立刻兜底,跳过网络往返
         guard userId > 0, AppState.shared.authToken != nil else { return nil }
         if let running = inflight[userId] { return await running.value }
         guard let token = AppState.shared.authToken else { return nil }
