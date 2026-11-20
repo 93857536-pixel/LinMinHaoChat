@@ -88,7 +88,7 @@ enum APIClient {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
-    /// 原始字节请求(附件上传/下载)
+    /// 原始字节请求(附件上传/下载;internal:AvatarAPI 需要自定义 cachePolicy 复用)
     static func sendRaw(_ req: URLRequest) async throws -> Data {
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse else {
@@ -681,8 +681,16 @@ enum AvatarAPI {
     }
 
     /// 拉取某个用户的头像字节(仅本人/好友/同会话成员可见;无头像或无权访问 → 404)
+    /// ⚠️ 强制绕过 URLCache:服务端 Cache-Control max-age=600,默认会话会让 URLCache
+    ///    在 10 分钟内直接回旧图(换/删头像后仍显示上一张)。头像改动是低频事件,
+    ///    每次直连服务器,保证"删了就回默认、换了就是新的"。
     static func download(userId: Int, token: String) async throws -> Data {
-        try await APIClient.requestData("/avatars/\(userId)", method: "GET", token: token)
+        var req = URLRequest(url: APIClient.url("/avatars/\(userId)"))
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        // 与 makeRequest 一致: 禁 HTTP/3(自签证书通道 QUIC 不走 pinning 委托)
+        if #available(iOS 14.0, *) { req.assumesHTTP3Capable = false }
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return try await APIClient.sendRaw(req)
     }
 }
 
