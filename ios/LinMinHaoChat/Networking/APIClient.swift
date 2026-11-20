@@ -88,7 +88,7 @@ enum APIClient {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
-    /// 原始字节请求(附件上传/下载;internal:AvatarAPI 需要自定义 cachePolicy 复用)
+    /// 原始字节请求(附件上传/下载;AvatarAPI 需自定义 cachePolicy 复用)
     static func sendRaw(_ req: URLRequest) async throws -> Data {
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse else {
