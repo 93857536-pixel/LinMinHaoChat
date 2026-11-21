@@ -11,7 +11,7 @@ on:
 env:
   NODE_VERSION: '20'
   SERVER_HOST: '112.126.79.9'
-  SERVER_USER: 'Administrator'
+  SERVER_USER: 'ci-deploy'
   DEPLOY_DIR: 'C:/opt/linminhao/app'
 
 jobs:
