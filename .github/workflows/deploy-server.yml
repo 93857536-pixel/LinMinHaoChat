@@ -4,7 +4,7 @@ on:
   push:
     paths:
       - 'server/**'
-      - '.github/workflows/*.yml'
+      - '.github/workflows/deploy-server.yml'
     branches: [main]
   workflow_dispatch:  # 手动触发
 
@@ -12,8 +12,7 @@ env:
   NODE_VERSION: '20'
   SERVER_HOST: '112.126.79.9'
   SERVER_USER: 'Administrator'
-  DEPLOY_DIR: '/c/opt/linminhao/app'
-  DEPLOY_KEY: ${{ secrets.SERVER_DEPLOY_KEY }}
+  DEPLOY_DIR: 'C:/opt/linminhao/app'
 
 jobs:
   deploy:
@@ -35,52 +34,40 @@ jobs:
       - name: Build TypeScript
         run: cd server && npm run build
 
-      - name: Prepare deploy
+      - name: Prepare deploy key
+        # secret 存的是 base64(单行,抗换行截断)。明文 PEM 粘进 secret 曾丢换行 → error in libcrypto
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          echo "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          echo "${{ secrets.SERVER_DEPLOY_KEY }}" | base64 -d > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          cat > ~/.ssh/config << EOF
-          Host ecs-deploy
-            HostName ${{ env.SERVER_HOST }}
-            User ${{ env.SERVER_USER }}
-            IdentityFile ~/.ssh/id_ed25519
-            StrictHostKeyChecking no
-            ForwardAgent no
-          EOF
+          # 先验 key 可解析:坏 key 在这里就失败,不带病走到 scp
+          ssh-keygen -l -f ~/.ssh/id_ed25519
 
-      - name: Deploy to ECS
+      - name: Verify SSH works
+        run: ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15 \
+          ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} "echo SSH_KEY_OK"
+
+      - name: Package and upload
+        # Administrator 组对 app\dist 是 (F) 全控,但 Windows OpenSSH 逐文件 scp 只传第一个(坑),
+        # 所以整包 tgz 传,服务器侧解包。Administrator 可写 app\ 顶层。
         run: |
-          scp -o StrictHostKeyChecking=no \
-              -i ~/.ssh/id_ed25519 \
-              -r server/dist \
-              "${{ env.SERVER_USER }}@${{ env.SERVER_HOST }}:${{ env.DEPLOY_DIR }}/dist/"
+          cd server && tar -czf dist.tgz dist
+          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no dist.tgz \
+            ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }}:"${{ env.DEPLOY_DIR }}/dist.tgz"
 
-          # Backup current version
-          ssh -o StrictHostKeyChecking=no \
-              -i ~/.ssh/id_ed25519 \
-              "${{ env.SERVER_USER }}@${{ env.SERVER_HOST }}" \
-              "cd ${{ env.DEPLOY_DIR }} && \
-               if [ -d dist ]; then
-                 BACKUP=\"dist-\$(date +%Y%m%d-%H%M%S).bak\"
-                 cp -r dist \"\$BACKUP\"
-                 echo \"Backed up to \$BACKUP\"
-               fi && \
-               chmod +x dist/index.js"
-
-      - name: Restart service (PM2 or systemctl)
+      - name: Deploy (backup + extract + syntax check + watchdog restart + health)
+        # ci-deploy.ps1 已预置在 C:\opt\linminhao\ci-deploy.ps1(纯 ASCII,仓内 docs/ci-deploy.ps1 留底)
+        # 流程:备份 dist → tar 解包覆盖 → node --check 四个入口 → 杀本 app 的 node
+        #       → 等 lmh-watchdog(每分钟)自愈拉起 → /api/health 最多等 120s
         run: |
-          ssh -o StrictHostKeyChecking=no \
-              -i ~/.ssh/id_ed25519 \
-              "${{ env.SERVER_USER }}@${{ env.SERVER_HOST }}" \
-              "cd ${{ env.DEPLOY_DIR }} && \
-               pm2 restart linminhao-chat || \
-               pm2 start dist/index.js --name linminhao-chat || \
-               echo 'Manual restart needed'"
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no \
+            ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} \
+            "powershell -NoProfile -ExecutionPolicy Bypass -File ${{ env.DEPLOY_DIR }}/../ci-deploy.ps1"
 
-      - name: Health check
+      - name: Public health check
+        # node 只听 127.0.0.1:3000,公网走 chat.linminhao.top(nginx 反代)
         run: |
-          sleep 3
-          curl -sf "http://${{ env.SERVER_HOST }}:3000/api/server-health" \
-            && echo "✅ Deployment successful!" || echo "⚠️ Health check failed, manual intervention may be needed"
+          sleep 5
+          curl -sf --noproxy '*' -m 30 "https://chat.linminhao.top/api/health" \
+            && echo "✅ Deployment successful" || (echo "❌ Health check failed"; exit 1)
