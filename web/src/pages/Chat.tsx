@@ -17,6 +17,7 @@ import MessageActionSheet from '../features/chat/MessageActionSheet';
 import ForwardDialog from '../features/chat/ForwardDialog';
 import MemberManageScreen from '../features/chat/MemberManageScreen';
 import { msgExt } from '../features/api-ext';
+import { isMuted, toggleMuted } from '../roomFlags';
 
 interface DecryptedMsg {
   id: string;
@@ -43,7 +44,10 @@ export default function Chat() {
   const [active, setActive] = useState<RoomMeta | null>(null);
   const [messages, setMessages] = useState<DecryptedMsg[]>([]);
   const [online, setOnline] = useState<number[]>([]);
-  const [onlineIps, setOnlineIps] = useState(0);
+  /** 对方正在输入(typing 帧驱动,4s 自动复位) */
+  const [peerTyping, setPeerTyping] = useState(false);
+  /** 免打扰会话集合(本地持久化,变更时刷新以驱动列表图标) */
+  const [mutedMap, setMutedMap] = useState<Record<string, boolean>>({});
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -63,6 +67,12 @@ export default function Chat() {
   const wsConnectedRef = useRef(false);
   const pollTimerRef = useRef<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  /** typing 发送节流(服务端 1.5s 防抖,客户端 2s 一次即可) */
+  const lastTypingSentRef = useRef(0);
+  /** typing 显示自动复位定时器 */
+  const typingResetRef = useRef<number | null>(null);
+  /** 当前 WS 的 send 句柄(typing 等轻量帧复用,避免每次重新订阅) */
+  const wsSendRef = useRef<((data: unknown) => void) | null>(null);
 
   const refreshRooms = useCallback(async () => {
     try {
@@ -85,6 +95,36 @@ export default function Chat() {
     myIdRef.current = session?.userId || 0;
     deviceRef.current = identity?.deviceId || 'default';
   }, [session, identity]);
+
+  /** 载入本地免打扰状态(页面进入时) */
+  useEffect(() => {
+    const map: Record<string, boolean> = {};
+    for (const r of rooms) map[r.id] = isMuted(r.id);
+    setMutedMap(map);
+  }, [rooms]);
+
+  /** 切换某会话免打扰(纯本地,服务端不感知) */
+  const onToggleMute = useCallback((roomId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const now = toggleMuted(roomId);
+    setMutedMap((prev) => ({ ...prev, [roomId]: now }));
+  }, []);
+
+  /** 输入中上报(2s 节流;服务端 1.5s 防抖兜底),随 WS 连接状态自动失效 */
+  const notifyTyping = useCallback(() => {
+    if (!active) return;
+    const send = wsSendRef.current;
+    // WS 尚未建立:不占用节流窗口(否则首个字符会被黑洞吞掉并让后续 2s 静默)
+    if (!send) return;
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 2_000) return;
+    lastTypingSentRef.current = now;
+    send({ type: 'typing', roomId: active.id });
+  }, [active]);
+
+  useEffect(() => () => {
+    if (typingResetRef.current !== null) window.clearTimeout(typingResetRef.current);
+  }, []);
 
   /** 打开会话:解包密钥 + 拉历史 + 订阅 WS */
   const openRoom = useCallback(async (room: RoomMeta) => {
@@ -132,7 +172,15 @@ export default function Chat() {
         onMessage: (m: WsMsg) => {
           if (m.type === 'presence' && m.roomId === room.id) {
             setOnline(Array.isArray(m.online) ? m.online.map(Number) : []);
-            if (typeof m.onlineIps === 'number') setOnlineIps(m.onlineIps);
+          }
+          // 对方正在输入:收到即亮,4s 无后续帧自动复位(与 iOS 4s 超时一致)
+          if (m.type === 'typing' && m.roomId === room.id && m.userId !== myIdRef.current) {
+            setPeerTyping(true);
+            if (typingResetRef.current !== null) window.clearTimeout(typingResetRef.current);
+            typingResetRef.current = window.setTimeout(() => {
+              setPeerTyping(false);
+              typingResetRef.current = null;
+            }, 4_000);
           }
           if (m.type === 'msg' && m.roomId === room.id && m.seq > lastSeqRef.current) {
             pullNew(room.id, key as Bytes);
@@ -151,6 +199,7 @@ export default function Chat() {
       });
       closeWsRef.current?.();
       closeWsRef.current = handle.close;
+      wsSendRef.current = handle.send;
       handle.send({ type: 'subscribe', roomId: room.id });
       wsConnectedRef.current = true;
       pullNew(room.id, key as Bytes); // 补收断线期间的消息
@@ -553,7 +602,16 @@ export default function Chat() {
               <div key={r.id} className="room-item" onClick={() => openRoom(r)}>
                 <div className="avatar">{r.type === 'group' ? '群' : '私'}</div>
                 <div className="name">{roomName(r)}</div>
-                {r.unread > 0 && <span className="badge">{r.unread}</span>}
+                {r.unread > 0 && !mutedMap[r.id] && <span className="badge">{r.unread}</span>}
+                <button
+                  className="btn btn-small btn-ghost"
+                  style={{ flex: 'none', padding: '2px 6px', fontSize: 14 }}
+                  onClick={(e) => onToggleMute(r.id, e)}
+                  title={mutedMap[r.id] ? '已免打扰(点击恢复提醒)' : '开启免打扰'}
+                  aria-label={mutedMap[r.id] ? '已免打扰' : '开启免打扰'}
+                >
+                  {mutedMap[r.id] ? '🔕' : '🔔'}
+                </button>
               </div>
             ))}
           </div>
@@ -564,7 +622,13 @@ export default function Chat() {
             <button className="btn btn-small" style={{ padding: '4px 10px' }} onClick={() => { setActive(null); closeWsRef.current?.(); }}>←</button>
             <span className={`presence-dot ${online.length > 1 ? 'online' : ''}`} />
             <div className="title">{roomName(active)} <span className="sub">#{active.id.slice(0, 8)}</span></div>
-            <span className="sub">{onlineIps ? `${onlineIps} 个IP在线` : ''}</span>
+            <span className="sub">
+              {peerTyping
+                ? '对方正在输入…'
+                : online.length > 0
+                  ? `${online.length} 人在线`
+                  : ''}
+            </span>
             {active.type === 'group' && (
               <button className="btn btn-small" onClick={() => setShowMembers(true)} title="群成员">成员</button>
             )}
@@ -629,7 +693,7 @@ export default function Chat() {
               placeholder="输入消息…(端到端加密)"
               value={input}
               maxLength={4000}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => { setInput(e.target.value); if (e.target.value) notifyTyping(); }}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
             />
             <button className="btn btn-primary send" onClick={send} disabled={sending || !input.trim()}>➤</button>

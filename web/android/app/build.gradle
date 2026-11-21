@@ -33,9 +33,9 @@ android {
         applicationId "com.linminhao.chat"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // 与 iOS 版对齐基线 v1.9.13;1.9.14 = Android 侧增量发布(新增深链);1.9.15 = 发现页全功能(临时/邀请聊天发起+加入);1.9.16 = 一键登录(号码认证 Android SDK)
-        versionCode 16
-        versionName "1.9.16"
+        // 与 iOS 版对齐基线 v1.9.13;1.9.14 = Android 侧增量发布(新增深链);1.9.15 = 发现页全功能(临时/邀请聊天发起+加入);1.9.16 = 一键登录(号码认证 Android SDK);1.9.17 = 同步 iOS v35 的正在输入/免打扰/在线人数 + 移除 IP 在线数泄露
+        versionCode 17
+        versionName "1.9.17"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // 阿里云号码认证 Android 方案 AppSecret(方案 FC220000013715102,包名 com.linminhao.chat)
         buildConfigField "boolean", "PNS_ENABLED", pnsAppSecret ? "true" : "false"

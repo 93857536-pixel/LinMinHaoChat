@@ -33,7 +33,6 @@ export default function TempChat() {
   const [messages, setMessages] = useState<DecryptedMsg[]>([]);
   const [shareUrl, setShareUrl] = useState('');
   const [online, setOnline] = useState<(string | number)[]>([]);
-  const [onlineIps, setOnlineIps] = useState(0);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [burnMsg, setBurnMsg] = useState('');
@@ -204,7 +203,6 @@ export default function TempChat() {
       onMessage: (m: WsMsg) => {
         if (m.type === 'presence') {
           setOnline(Array.isArray(m.online) ? m.online : []);
-          if (typeof m.onlineIps === 'number') setOnlineIps(m.onlineIps);
         }
         if (m.type === 'msg' && m.seq > lastSeqRef.current) pullNew();
       },
@@ -327,7 +325,7 @@ export default function TempChat() {
           <button className="btn btn-small" onClick={copyLink}>复制</button>
         </div>
         <p className="hint" style={{ margin: '6px 0 0' }}>
-          {onlineIps} 个IP在线 · 刷新页面 = 立即清除本地密钥 · 服务器仅保存密文归档
+          {online.length} 人在线 · 刷新页面 = 立即清除本地密钥 · 服务器仅保存密文归档
         </p>
       </div>
 

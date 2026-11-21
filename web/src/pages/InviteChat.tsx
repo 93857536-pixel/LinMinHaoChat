@@ -42,7 +42,6 @@ export default function InviteChat() {
   const [displayName, setDisplayName] = useState('');
   const [messages, setMessages] = useState<DecryptedMsg[]>([]);
   const [online, setOnline] = useState<(string | number)[]>([]);
-  const [onlineIps, setOnlineIps] = useState(0);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [expireInfo, setExpireInfo] = useState<{ expiresAt: number; messageCount: number } | null>(null);
@@ -218,7 +217,6 @@ export default function InviteChat() {
       onMessage: (m: WsMsg) => {
         if (m.type === 'presence') {
           setOnline(Array.isArray(m.online) ? m.online : []);
-          if (typeof m.onlineIps === 'number') setOnlineIps(m.onlineIps);
         }
         if (m.type === 'msg' && m.seq > lastSeqRef.current) pullNew();
       },
@@ -382,7 +380,7 @@ export default function InviteChat() {
       <div className="card" style={{ padding: 10, margin: '8px 0', fontSize: 12.5 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <span className="hint" style={{ margin: 0, flex: 1 }}>
-            👤 {displayName} · {onlineIps} 个IP在线 · 记录已保留(刷新页面不丢失)
+            👤 {displayName} · {online.length} 人在线 · 记录已保留(刷新页面不丢失)
           </span>
           <button className="btn btn-small" onClick={clearLocal} title="清除本机密钥与记录(服务器密文归档保留)">清除本机记录</button>
         </div>

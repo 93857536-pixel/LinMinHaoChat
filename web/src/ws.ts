@@ -3,7 +3,8 @@
 export type WsMsg =
   | { type: 'msg'; roomId: string; seq: number; id: string; senderId?: number; anonId?: string; ts: number; kind?: string }
   | { type: 'read'; roomId: string; userId: number; lastSeq: number }
-  | { type: 'presence'; roomId: string; online: (number | string)[]; onlineIps?: number }
+  | { type: 'presence'; roomId: string; online: (number | string)[] }
+  | { type: 'typing'; roomId: string; userId: number; ts: number }
   | { type: 'subscribed'; roomId: string }
   | { type: 'pong'; t: number }
   | { type: 'hello'; serverTime: number }
@@ -30,8 +31,21 @@ export function connectWs(token: string, opts: WsClientOptions): WsHandle {
   const host = override ? override.replace(/^wss?:\/\//, '') : location.host;
   const ws = new WebSocket(`${proto}://${host}/ws?token=${encodeURIComponent(token)}`);
   let closed = false;
+  /**
+   * 连接建立前(readyState=CONNECTING)发出的帧不能直接丢:调用方(openRoom)在
+   * connectWs 返回后立刻 send({type:'subscribe'}),此时握手尚未完成,旧实现会静默
+   * 丢包 → 服务端 never 收到 subscribe → 该连接收不到 msg/typing/presence 广播,
+   * 实时链路退化为「只有 15s 轮询兜底」。改为先入队,onopen 后按序冲刷。
+   */
+  const pending: string[] = [];
 
-  ws.onopen = () => opts.onOpen?.();
+  ws.onopen = () => {
+    while (pending.length) {
+      const data = pending.shift() as string;
+      try { ws.send(data); } catch { /* ignore */ }
+    }
+    opts.onOpen?.();
+  };
   ws.onmessage = (e) => {
     try {
       opts.onMessage(JSON.parse(String(e.data)) as WsMsg);
@@ -47,10 +61,17 @@ export function connectWs(token: string, opts: WsClientOptions): WsHandle {
 
   return {
     send: (data) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+      const payload = JSON.stringify(data);
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(payload);
+      } else if (ws.readyState === WebSocket.CONNECTING && !closed) {
+        // 握手未完成:入队,onopen 后统一冲刷(最多保留 32 条,防内存泄漏)
+        if (pending.length < 32) pending.push(payload);
+      }
     },
     close: () => {
       closed = true;
+      pending.length = 0;
       clearInterval(hb);
       try { ws.close(); } catch { /* ignore */ }
     },
