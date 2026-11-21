@@ -42,7 +42,7 @@ Android 单独更新:[**v1.9.17 — 正在输入 / 免打扰 / 实时通道修�
 | 平台 | 资产 | 版本 | 安装方式 |
 |---|---|---|---|
 | 📱 iOS | `LinMinHaoChat-ios-unsigned-v28.ipa` | 1.9 (build 28) | 未签名 IPA,需全能签/Esign 等第三方签名工具签名后安装 |
-| 🤖 Android | `LinMinHaoChat-android-v1.9.17.apk` | 1.9.17 (Android 12+) | 项目签名证书(release keystore);允许「安装未知应用」后直接安装。另有 `-debug.apk` 便于抓 logcat |
+| 🤖 Android | `LinMinHaoChat-android-v1.9.17-debug.apk` | 1.9.17 (Android 12+) | 公共 debug 证书签名(Android 系统硬性要求 APK 必须带签名),允许「安装未知应用」后直接安装 |
 | 🌸 HarmonyOS | `LinMinHaoChat-harmony-v1.9.16-unsigned.hap` | 1.9.16 | 未签名 HAP,需 DevEco Studio 自动签名(华为开发者账号)或自备 .p12 证书签名 |
 
 > ⚠️ 按约定,本仓库所有发行版**不附项目私有签名**:iOS/鸿蒙为未签包,Android 使用公共 debug 证书(非私钥)。
