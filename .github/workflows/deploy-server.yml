@@ -80,15 +80,15 @@ jobs:
         run: |
           echo "=== [1/2] Server-side authoritative health check ==="
           ok=0
-          for i in 1 2 3; do
+          for i in 1 2 3 4 5 6; do
             out=$(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15 \
-              ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} "curl.exe -s -m 10 http://127.0.0.1:3000/api/health" 2>/dev/null || echo "")
+              ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} "curl.exe -s -m 10 http://127.0.0.1:3000/api/health 2>&1; echo CURLRC_\$LASTEXITCODE" 2>/dev/null || echo "")
             echo "server attempt $i: $out"
             case "$out" in *'"ok":true'*) ok=1; break;; esac
-            sleep 10
+            sleep 15
           done
           if [ "$ok" != "1" ]; then
-            echo "❌ Server-side health check failed - deployment NOT confirmed"
+            echo "❌ Server-side health check failed after 90s - deployment NOT confirmed"
             exit 1
           fi
           echo "✅ Server-side service is up (authoritative)"
