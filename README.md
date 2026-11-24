@@ -46,19 +46,31 @@ Web 前端**不删除**,保留作为开发测试 / E2EE 协议测试 / 后端 AP
 | 🌐 **三端互通** | iOS / Android / HarmonyOS / Web 任意两端组合收发同一房间消息,E2EE 协议字节级兼容(有自动化交叉验证) |
 | 🛡️ **隐私友好** | 无任何追踪、无广告、无明文存储。管理员后台只能看到元数据统计,看不到任何聊天内容;WS 在线列表不再广播 IP(安全审计修复) |
 
-## 📥 安装包下载(三端)
+## 📥 安装包下载(三端统一 v1.0 发行版)
 
-> ⚠️ 按约定,本仓库所有发行版**不附项目私有签名**:iOS / 鸿蒙为未签包,iOS 用全能签/Esign 等第三方签名工具签名后安装;鸿蒙用 DevEco Studio 自动签名(华为开发者账号)或自备 .p12;Android 使用公共 debug 证书(Android 系统硬性要求 APK 必须带签名),允许「安装未知应用」后直接安装。
+> 三个平台的**最新**安装包已合并到 [v1.0](https://github.com/93857536-pixel/LinMinHaoChat/releases/tag/v1.0) 一个 Release(标记为 Latest)。
+> 早期的分散发行版(v1.9.10 ~ v1.9.28、v29-ios、v31-ios、v35-ios 等)已全部删除,`v1.0` 标签同步从 2026-09 的旧版本移至当前代码。
+> ⚠️ 按约定,本仓库所有发行版**不附项目私有签名**:iOS 为未签包,需全能签/Esign/爱签等第三方工具签名后安装;鸿蒙 .hap 为本地 pki_internal 签名,无 AGC profile 时可在 DevEco Studio 导入安装或自备 .p12 重签;Android 使用公共 debug 证书(Android 系统硬性要求 APK 必须带签名),允许「安装未知应用」后直接安装。
 
-| 平台 | 最新 Release | 资产 | 安装方式 |
-|---|---|---|---|
-| 📱 iOS | [v35-ios](https://github.com/93857536-pixel/LinMinHaoChat/releases/tag/v35-ios) | `LinMinHaoChat-unsigned-v35.ipa` | 未签名 IPA,全能签/爱签等工具签名后安装 |
-| 🤖 Android | [v1.9.17-android](https://github.com/93857536-pixel/LinMinHaoChat/releases/tag/v1.9.17-android) | `LinMinHaoChat-android-v1.9.17-debug.apk`(Android 12+) | 公共 debug 证书签名,允许「安装未知应用」后直接安装 |
-| 🌸 HarmonyOS | [v1.9.16-harmony](https://github.com/93857536-pixel/LinMinHaoChat/releases/tag/v1.9.16-harmony) | `LinMinHaoChat-harmony-v1.9.16-unsigned.hap` | 未签名 HAP,DevEco Studio 自动签名或自备 .p12 证书签名 |
+### 版本矩阵(v1.0 发行版内置各端版本)
 
-**v35(iOS 最新版,1.9 build 31,未签名)能力清单:** 正在输入提示(1.5s 防抖)+ 已读回执方向修正(只有对方读了才标 ✓✓)+ 会话免打扰(免打扰会话不进系统通知 / 不更新角标)+ 头像缓存竞态修复 + 附件媒体渲染 / 引用回复 / 本地消息搜索 / 密钥包导出导入(多设备迁移)+ 国内直连双通道 / SPKI pinning / 禁用 QUIC + 群聊改名 + 本地通知系统。SHA256: `122bfc3...448b2`
+| 平台 | 资产文件名 | 内部版本 | 最低系统 | 安装方式 |
+|---|---|---|---|---|
+| 📱 iOS | `LinMinHaoChat-unsigned-v35.ipa`(~1.8 MB) | 1.9 (build 31) | iOS 17 | 未签名 IPA:全能签/爱签/Esign 等工具签名后安装 |
+| 🤖 Android | `LinMinHaoChat-android-v1.9.17-debug.apk`(~10 MB) | 1.9.17(debug 证书) | Android 12+ | 允许「安装未知应用」后直接安装 |
+| 🌸 HarmonyOS | `LinMinHaoChat-harmony-v1.9.16-signed.hap`(~0.4 MB) | 1.9.16(pki_internal 签名) | HarmonyOS NEXT | DevEco Studio 导入安装,或自备 AGC profile 重签 |
 
-全部历史发行版见 [Releases](https://github.com/93857536-pixel/LinMinHaoChat/releases)。
+> 注:iOS 资产名中的 `v35` 是发行序列号(第 35 次 iOS 出包),App 内部版本为 1.9 build 31;Android/Harmony 资产名保留各自的内部版本号,保证装上去后「关于」页显示与包一致。
+
+**SHA256 校验和(下载后请核对):**
+
+```
+122bfc3305b79132cc2501fb50ef33c4c945394a44a411ff82a40a3d7fe448b2  LinMinHaoChat-unsigned-v35.ipa
+7da5135dfe88bb736c990cfba1e2cde3d6d01c5bffb61b44a300374a2f68cead  LinMinHaoChat-android-v1.9.17-debug.apk
+98171fa47571c2a3ec21ef067aef97f27c1b80d77a42f3fec25d146e40ceeaf4  LinMinHaoChat-harmony-v1.9.16-signed.hap
+```
+
+**v1.0 能力清单(以 iOS build 31 / Android 1.9.17 为基准,三端协议字节级互通):** 正在输入提示(typing 帧 1.5s 防抖,状态栏显示「对方正在输入」)+ 已读回执方向修正(只有对方读了才把「我发的」标 ✓✓)+ 会话免打扰(本地持久化 `lmh.room.muted.v1`,免打扰会话不进系统通知、不更新角标)+ 头像缓存竞态修复(删头像后立即回默认,绕过 URLCache 负缓存)+ WS 订阅丢帧修复(CONNECTING 期 send 入队,onopen 后按序冲刷)+ 附件媒体渲染 / 引用回复 / 本地消息搜索 / 密钥包导出导入(多设备迁移)+ 国内直连双通道(`direct.linminhao.top` Let's Encrypt 直连 + 主域 Cloudflare)/ SPKI pinning / 禁用 QUIC(HTTP-3)+ 群聊改名 + 本地通知系统。E2E 三端交叉验证 13/13 通过。
 
 ---
 
@@ -235,7 +247,7 @@ deploy/          nginx 配置 / 自启动 / 备份 / 证书 / 监控 / watchdog 
 
 ## 🕘 近期版本亮点
 
-- **v35 / 1.9.17(2026-11-20/21,iOS 1.9 build 31)**:正在输入提示(typing 帧 1.5s 防抖)、已读回执方向修正(只认对方 read 帧)、会话免打扰(本地持久化 / 免打扰会话不进通知不角标)、头像缓存竞态修复(绕过 URLCache 负缓存,删头像立即回默认)、WS 订阅丢帧修复(CONNECTING 期 send 入队,onopen 后按序冲刷,实时通道不再只剩 15s 轮询兜底)、群聊改名 + 本地通知、账号绑定手机+邮箱双登录、短信验证码改 DYPNS 平台托管码、安全审计(WS 不广播 IP + keys 路由限流)、国内直连双通道 + SPKI pinning + 禁用 QUIC。E2E 双端交叉验证 13/13 通过。
+- **v1.0 统一发行版(2026-11-24,三端最新包合一)**:iOS = build 31(发行序列号 v35)、Android = 1.9.17(debug 证书)、HarmonyOS = 1.9.16(pki_internal 本地签名),三个安装包合并入 [v1.0 Release](https://github.com/93857536-pixel/LinMinHaoChat/releases/tag/v1.0),早期分散发行版全部删除,`v1.0` 标签指向当前代码。能力基线:iOS build 31 的正在输入提示(typing 帧 1.5s 防抖)、已读回执方向修正(只认对方 read 帧)、会话免打扰(本地持久化 / 免打扰会话不进通知不角标)、头像缓存竞态修复(绕过 URLCache 负缓存,删头像立即回默认)、WS 订阅丢帧修复(CONNECTING 期 send 入队,onopen 后按序冲刷,实时通道不再只剩 15s 轮询兜底);群聊改名 + 本地通知、账号绑定手机+邮箱双登录、短信验证码改 DYPNS 平台托管码、安全审计(WS 不广播 IP + keys 路由限流)、国内直连双通道 + SPKI pinning + 禁用 QUIC。E2E 双端交叉验证 13/13 通过。
 - **CI(2026-11)**:ECS 自动部署工作流全通(专用 ci-deploy 账号、YAML 块标量修 sshd 1332 坑、6×15s 权威健康检查覆盖 watchdog 周期)
 
 ## 📄 License
