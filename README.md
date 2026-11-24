@@ -72,6 +72,58 @@ Web 前端**不删除**,保留作为开发测试 / E2EE 协议测试 / 后端 AP
 
 **v1.0 能力清单(以 iOS build 31 / Android 1.9.17 为基准,三端协议字节级互通):** 正在输入提示(typing 帧 1.5s 防抖,状态栏显示「对方正在输入」)+ 已读回执方向修正(只有对方读了才把「我发的」标 ✓✓)+ 会话免打扰(本地持久化 `lmh.room.muted.v1`,免打扰会话不进系统通知、不更新角标)+ 头像缓存竞态修复(删头像后立即回默认,绕过 URLCache 负缓存)+ WS 订阅丢帧修复(CONNECTING 期 send 入队,onopen 后按序冲刷)+ 附件媒体渲染 / 引用回复 / 本地消息搜索 / 密钥包导出导入(多设备迁移)+ 国内直连双通道(`direct.linminhao.top` Let's Encrypt 直连 + 主域 Cloudflare)/ SPKI pinning / 禁用 QUIC(HTTP-3)+ 群聊改名 + 本地通知系统。E2E 三端交叉验证 13/13 通过。
 
+### 📱 iOS 安装步骤(未签名 IPA → 第三方签名 → 安装)
+
+1. 从 [v1.0 Release](https://github.com/93857536-pixel/LinMinHaoChat/releases/tag/v1.0) 下载 `LinMinHaoChat-unsigned-v35.ipa`,核对 SHA256(见上)。
+2. 在 Mac 或 Windows PC 上用 **全能签 / 爱签 / Esign** 等第三方签名工具对 IPA 签名(工具内置公共描述文件,无需自建开发者账号;企业描述文件可去掉 7 天过期限制)。
+3. 签名后的安装产物(描述文件 + App)传到 iPhone:数据线、AirDrop、网盘或微信文件传输均可。
+4. 先安装 **描述文件**(设置 → 通用 → VPN 与设备管理 / 已下载描述文件),再安装 App;系统会提示「未受信任」→ 设置 → 通用 → 设备管理 → 信任开发者。
+5. 打开 App 即自动连接后端,无需任何配置。最低 iOS 17,App 体积约 1.8 MB。
+
+> 为什么不给私有签名:本仓库按约定**不附项目私有签名**(避免把开发者账号信息打进发布物),第三方签名工具的公共描述文件对所有设备可用,且无 7 天 / 设备 UDID 白名单限制(全能签企业签)。
+
+### 🤖 Android 安装步骤
+
+1. 下载 `LinMinHaoChat-android-v1.9.17-debug.apk`(公共 debug 证书签名,~10 MB,Android 12+)。
+2. 安装时系统提示「未知来源应用」→ 允许;若被应用商店拦截,选择「仍然安装」。
+3. 首次打开授予通知权限(群聊 / 免打扰功能依赖本地通知)。
+
+> debug 证书是公开的可信证书(任何 Android 开发者本机默认都有),不是「未签名」——Android 系统硬性要求 APK 必须带签名,这是三端中唯一带签发的包。
+
+### 🌸 HarmonyOS 安装步骤
+
+1. 下载 `LinMinHaoChat-harmony-v1.9.16-signed.hap`(本地 `pki_internal` 签名,~0.4 MB)。
+2. 无 AGC 开发者账号:用 **DevEco Studio → 运行 → 本地 HAP 导入** 安装,或将 .hap 直接装到已开启「HAP 调试」的 NEXT 设备。
+3. 有 AGC 账号:用官方自动签名重新签一遍(仓库内 `harmony/sign-local.sh` 提供无 profile 的本地签名路径,详见 `harmony/docs/`),即可在设备市场类通道分发。
+
+### 完整版本历史(发行序列号视角)
+
+> 早期各端分开发行的 14 个 Release(v1.9.10 ~ v1.9.28 / v29-ios / v31-ios / v35-ios / 各 -android / -harmony)已于 2026-11-24 合并清理,仅保留 v1.0 一个 Latest;下表为完整时间线供追溯。
+
+| 日期 | 发行 | 平台 | 主要变化 |
+|---|---|---|---|
+| 2026-11-24 | **v1.0(统一)** | 三端 | 三端最新包合一: iOS build 31 + Android 1.9.17 + HarmonyOS 1.9.16;早期分散发行版全部删除 |
+| 2026-11-20 | v35-ios(iOS 序列号) | iOS | 正在输入 / 已读回执方向修正 / 会话免打扰 / 头像竞态 / WS 丢帧 |
+| 2026-11-21 | v1.9.17-android | Android | 同基线:typing + 免打扰 + 实时通道修复(debug 证书 APK) |
+| 2026-11-15 | v31-ios | iOS | 头像即时刷新 + 附件 / 引用 / 本地搜索 / 密钥包导出导入(多设备迁移) |
+| 2026-11-15 | v29-ios | iOS | 同 v31 基线(序列号较早) |
+| 2026-11-15 | v1.9.28 | 三端 | 三端一次性合发(iOS v28 / Android 1.9.16 / Harmony 1.9.16) |
+| 2026-10-20 | v1.9.16-harmony | 鸿蒙 | 首个本地 pki_internal 签名 .hap(无 AGC profile 路线) |
+| 2026-10-17 | v1.9.16-android | Android | 1.9 build 16 |
+| 2026-10-16 | v1.9.15-android | Android | 发现页全功能 |
+| 2026-10-06 | v1.9.14 / v1.9.13 / v1.9.12 / v1.9.10 | 混合 | 早期 E2EE 协议迭代序列 |
+| 2026-09-27 | v1.0(旧,已作废) | iOS | 首版(旧 1.9 build 1,已被新 v1.0 标签取代) |
+
+### ❓ 常见问题
+
+- **「关于」页显示 1.9.17 / 1.9.16 / 1.9 build 31,Release 却叫 v1.0?** 不矛盾:Release 标签 `v1.0` 是发行版本号,App 内部 `CFBundleShortVersionString` / `versionName` 保持各端独立递增(1.9 build 31 是 iOS 的内部第 31 次构建,1.9.17 是 Android 内部 17 次)。Release 名统一为 v1.0,包内容保留各自真实版本,方便「关于」页溯源。
+- **iOS 装完提示「未受信任的开发者」?** 走第三方签名后不会出现;若你自备描述文件签名,需在 设置 → 通用 → 设备管理 里信任对应开发者。
+- **换了手机 / 重新装机,聊天记录和账号还在吗?** 账号聊天(E2EE 身份密钥存 Keychain)可用「密钥包导出 / 导入」迁移到新设备;临时聊天房间 7 天自动过期,过期后旧消息随会话密钥销毁。
+- **鸿蒙 .hap 能直接发给朋友装吗?** 本地 pki_internal 签名的 .hap 只能装在调试 / 已解锁设备;正式分发请用 AGC 账号重签(DevEco 自动签名 1 分钟)。
+- **Web 版还能用吗?** 能,https://chat.linminhao.top 保留为开发 / E2EE 协议 / 兼容测试入口;正式用户请装 iOS 原生 App(新功能优先在 iOS 做)。
+- **如何自己起一套后端?** 见下文「快速开始 → 5 分钟本地开发模式」;生产部署教程见 `docs/DEPLOYMENT.md`(Windows Server 一套脚本:nginx + Let's Encrypt + 自启动守护 + 自动备份 + watchdog)。
+- **服务器会存我的明文消息吗?** 不会。消息在客户端 CryptoKit / WebCrypto 加密成 AES-GCM-256 密文才出设备,服务器与数据库里全部是密文,没有万能密钥(细节见 `docs/SECURITY.md`)。
+
 ---
 
 ## 🚀 快速开始
