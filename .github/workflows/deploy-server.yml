@@ -70,8 +70,20 @@ jobs:
             "powershell -NoProfile -ExecutionPolicy Bypass -File ${{ env.DEPLOY_DIR }}/../ci-deploy.ps1"
 
       - name: Public health check
-        # node 只听 127.0.0.1:3000,公网走 chat.linminhao.top(nginx 反代)
+        # node 只听 127.0.0.1:3000,公网走 chat.linminhao.top(nginx 反代)。
+        # 坑: watchdog 每分钟自愈拉起一次,部署后 +5s 单发 curl 正好可能撞上
+        # node 被杀/未起窗, 返回 502/503(curl -f 判失败)。改成 180s 重试循环,
+        # 容忍 60s watchdog 周期; 最终失败时打印最后 HTTP 码便于排障。
         run: |
-          sleep 5
-          curl -sf --noproxy '*' -m 30 "https://chat.linminhao.top/api/health" \
-            && echo "✅ Deployment successful" || (echo "❌ Health check failed"; exit 1)
+          code=000
+          for i in $(seq 1 24); do
+            code=$(curl -s --noproxy '*' -m 30 -o /dev/null -w "%{http_code}" \
+              "https://chat.linminhao.top/api/health" || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "✅ Deployment successful (healthy on attempt $i)"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "❌ Health check failed after 180s (last HTTP $code)"
+          exit 1
