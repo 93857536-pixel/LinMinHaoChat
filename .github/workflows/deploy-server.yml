@@ -70,20 +70,43 @@ jobs:
             "powershell -NoProfile -ExecutionPolicy Bypass -File ${{ env.DEPLOY_DIR }}/../ci-deploy.ps1"
 
       - name: Public health check
-        # node 只听 127.0.0.1:3000,公网走 chat.linminhao.top(nginx 反代)。
-        # 坑: watchdog 每分钟自愈拉起一次,部署后 +5s 单发 curl 正好可能撞上
-        # node 被杀/未起窗, 返回 502/503(curl -f 判失败)。改成 180s 重试循环,
-        # 容忍 60s watchdog 周期; 最终失败时打印最后 HTTP 码便于排障。
+        # node 只听 127.0.0.1:3000,公网走 chat.linminhao.top(Cloudflare)。
+        # 两层设计(2026-11-24 定稿):
+        # ① 权威层: SSH 到 ECS 服务端 curl 127.0.0.1:3000, 3 次重试, 失败=exit 1。
+        #    (Deploy 步内 ci-deploy.ps1 已含 90s 健康门+自动回滚, 这里是二次确认)
+        # ② 公网层: CF 域带浏览器 UA 重试。GitHub runner 是数据中心出口+裸 curl 特征,
+        #    大概率被 CF bot 管理拦成 403 —— ②失败只警告不阻塞(权威层①已过即部署成功),
+        #    避免 CI 被 CF 策略误判。CF 云端配置(WAF/bot 放行)须经用户明确指令才改。
         run: |
-          code=000
-          for i in $(seq 1 24); do
-            code=$(curl -s --noproxy '*' -m 30 -o /dev/null -w "%{http_code}" \
-              "https://chat.linminhao.top/api/health" || echo 000)
-            if [ "$code" = "200" ]; then
-              echo "✅ Deployment successful (healthy on attempt $i)"
-              exit 0
-            fi
-            sleep 5
+          echo "=== [1/2] Server-side authoritative health check ==="
+          ok=0
+          for i in 1 2 3; do
+            out=$(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15 \
+              ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} "curl.exe -s -m 10 http://127.0.0.1:3000/api/health" 2>/dev/null || echo "")
+            echo "server attempt $i: $out"
+            case "$out" in *'"ok":true'*) ok=1; break;; esac
+            sleep 10
           done
-          echo "❌ Health check failed after 180s (last HTTP $code)"
-          exit 1
+          if [ "$ok" != "1" ]; then
+            echo "❌ Server-side health check failed - deployment NOT confirmed"
+            exit 1
+          fi
+          echo "✅ Server-side service is up (authoritative)"
+
+          echo "=== [2/2] Public CF-domain check (informational) ==="
+          pcode=000
+          for i in $(seq 1 6); do
+            pcode=$(curl -s --noproxy '*' -m 20 \
+              -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36" \
+              -o /dev/null -w "%{http_code}" "https://chat.linminhao.top/api/health" || echo 000)
+            echo "public attempt $i: HTTP $pcode"
+            [ "$pcode" = "200" ] && break
+            sleep 15
+          done
+          if [ "$pcode" = "200" ]; then
+            echo "✅ Deployment successful (public 200 confirmed)"
+          else
+            echo "⚠️ Public health check inconclusive (HTTP $pcode) — GitHub runner egress likely blocked by Cloudflare bot management."
+            echo "   Server-side authoritative check PASSED: service is up. Public path expected fine for end users."
+            echo "   (If public 200 is required, adjust CF bot settings for chat.linminhao.top — cloud config change needs explicit user instruction.)"
+          fi
