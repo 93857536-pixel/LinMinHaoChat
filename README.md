@@ -52,11 +52,11 @@ Web 前端**不删除**,保留作为开发测试 / E2EE 协议测试 / 后端 AP
 
 | 平台 | 最新 Release | 资产 | 安装方式 |
 |---|---|---|---|
-| 📱 iOS | [v31-ios](https://github.com/93857536-pixel/LinMinHaoChat/releases/tag/v31-ios) | `LinMinHaoChat-unsigned-v31.ipa` | 未签名 IPA,全能签/爱签等工具签名后安装 |
+| 📱 iOS | [v35-ios](https://github.com/93857536-pixel/LinMinHaoChat/releases/tag/v35-ios) | `LinMinHaoChat-unsigned-v35.ipa` | 未签名 IPA,全能签/爱签等工具签名后安装 |
 | 🤖 Android | [v1.9.17-android](https://github.com/93857536-pixel/LinMinHaoChat/releases/tag/v1.9.17-android) | `LinMinHaoChat-android-v1.9.17-debug.apk`(Android 12+) | 公共 debug 证书签名,允许「安装未知应用」后直接安装 |
 | 🌸 HarmonyOS | [v1.9.16-harmony](https://github.com/93857536-pixel/LinMinHaoChat/releases/tag/v1.9.16-harmony) | `LinMinHaoChat-harmony-v1.9.16-unsigned.hap` | 未签名 HAP,DevEco Studio 自动签名或自备 .p12 证书签名 |
 
-**v31(iOS 最新版)能力清单:** 附件媒体渲染 + 引用回复 + 本地消息搜索 + 密钥包导出/导入(多设备迁移)+ 头像即时刷新 + 国内直连双通道 + 正在输入提示 / 免打扰 / 在线人数 + 群聊改名 + 本地通知系统。
+**v35(iOS 最新版,1.9 build 31,未签名)能力清单:** 正在输入提示(1.5s 防抖)+ 已读回执方向修正(只有对方读了才标 ✓✓)+ 会话免打扰(免打扰会话不进系统通知 / 不更新角标)+ 头像缓存竞态修复 + 附件媒体渲染 / 引用回复 / 本地消息搜索 / 密钥包导出导入(多设备迁移)+ 国内直连双通道 / SPKI pinning / 禁用 QUIC + 群聊改名 + 本地通知系统。SHA256: `122bfc3...448b2`
 
 全部历史发行版见 [Releases](https://github.com/93857536-pixel/LinMinHaoChat/releases)。
 
@@ -235,7 +235,7 @@ deploy/          nginx 配置 / 自启动 / 备份 / 证书 / 监控 / watchdog 
 
 ## 🕘 近期版本亮点
 
-- **v31 / 1.9.17(2026-11)**:正在输入提示、会话免打扰、在线人数、WS 订阅丢帧修复、头像即时刷新(修 URLCache 负缓存)、群聊改名 + 本地通知、账号绑定手机+邮箱双登录、短信验证码改 DYPNS 平台托管码、安全审计(WS 不广播 IP + keys 路由限流)、国内直连双通道 + SPKI pinning + 禁用 QUIC
+- **v35 / 1.9.17(2026-11-20/21,iOS 1.9 build 31)**:正在输入提示(typing 帧 1.5s 防抖)、已读回执方向修正(只认对方 read 帧)、会话免打扰(本地持久化 / 免打扰会话不进通知不角标)、头像缓存竞态修复(绕过 URLCache 负缓存,删头像立即回默认)、WS 订阅丢帧修复(CONNECTING 期 send 入队,onopen 后按序冲刷,实时通道不再只剩 15s 轮询兜底)、群聊改名 + 本地通知、账号绑定手机+邮箱双登录、短信验证码改 DYPNS 平台托管码、安全审计(WS 不广播 IP + keys 路由限流)、国内直连双通道 + SPKI pinning + 禁用 QUIC。E2E 双端交叉验证 13/13 通过。
 - **CI(2026-11)**:ECS 自动部署工作流全通(专用 ci-deploy 账号、YAML 块标量修 sshd 1332 坑、6×15s 权威健康检查覆盖 watchdog 周期)
 
 ## 📄 License
