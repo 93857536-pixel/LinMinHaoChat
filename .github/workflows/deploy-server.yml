@@ -45,8 +45,12 @@ jobs:
           ssh-keygen -l -f ~/.ssh/id_ed25519
 
       - name: Verify SSH works
-        run: ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15 \
-          ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} "echo SSH_KEY_OK"
+        # 坑: run: 后用普通多行标量时, YAML 会把反斜杠后的换行折叠成空格,
+        # bash 把 "\ +空格" 当转义空格, 空格粘进 user@host 参数 -> ssh 用户名变成
+        # " ci-deploy"(带前导空格), 服务端 lookup_sid 1332 拒绝。必须用 run: | 块风格。
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15 \
+            ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} "echo SSH_KEY_OK"
 
       - name: Package and upload
         # Administrator 组对 app\dist 是 (F) 全控,但 Windows OpenSSH 逐文件 scp 只传第一个(坑),
